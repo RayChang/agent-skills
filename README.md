@@ -42,3 +42,24 @@ npx skills add RayChang/agent-skills@kb-wiki
 ```bash
 npx skills add RayChang/agent-skills@markitdown
 ```
+
+---
+
+### `cove`
+
+基於 Meta AI 的 [Chain-of-Verification（CoVe）論文](https://arxiv.org/abs/2309.11495)，透過結構化的四步驟自我驗證流程減少 LLM 的 hallucination。
+
+以 `/cove` 手動觸發，對前一個回應（或指定內容）進行驗證與修訂。
+
+**四步驟流程：**
+
+1. 取得待驗證的初稿
+2. 針對關鍵事實、技術陳述、邏輯斷言規劃驗證問題
+3. 獨立回答每個驗證問題（不參照原稿，避免 self-confirmation bias）
+4. 對照驗證結果修訂初稿，標示無法驗證的內容
+
+適合用於事實密集的回答、技術說明、或任何對準確性要求較高的場景。
+
+```bash
+npx skills add RayChang/agent-skills@cove
+```
