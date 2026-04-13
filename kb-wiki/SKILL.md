@@ -72,7 +72,8 @@ To ingest a source from `kb/raw/sources/`:
 1. Read `kb/wiki/index.md` to understand existing wiki content and discover what categories exist
 2. Read the source document fully
 3. Identify which existing wiki pages it relates to, and what new pages are needed
-4. Create new pages and/or update existing pages — a single source can touch multiple pages
+4. **Duplicate check**: before creating a new page, scan existing page titles and tags for near-matches (aliases, alternate spellings, abbreviations). If a concept already has a page under a different name, update the existing page instead of creating a duplicate. When in doubt, ask the user.
+5. Create new pages and/or update existing pages — a single source can touch multiple pages. New pages default to `status: seedling`.
 5. Update `kb/wiki/index.md`: add new pages, update one-line summaries if changed
 6. Append to `kb/wiki/log.md`:
    ```
@@ -206,6 +207,8 @@ To capture learnings at the end of a significant implementation block:
 - **Never write to `kb/raw/`** — it is immutable source material
 - **Always update `index.md` and `log.md`** after any wiki change
 - **Link liberally** — cross-references between pages are what give the wiki its value
-- **Keep index.md summaries accurate and specific** — at ~100 pages / hundreds of thousands of words, a well-maintained index is what makes direct LLM reads sufficient; RAG is not needed at this scale. Vague summaries break this.
+- **Keep index.md summaries accurate and specific** — at ~100 pages / hundreds of thousands of words, a well-maintained index is what makes direct LLM reads sufficient; RAG is not needed at this scale. As the wiki grows beyond this, introduce search tools (e.g. qmd) as a scaling complement — not a replacement for the index.
 - **File outputs back** — query answers are wiki contributions, not disposable chat responses
 - **Never assume categories** — always discover them from the actual directory structure or ask during init
+- **LLM owns content, human owns meta** — the LLM writes and maintains all wiki content pages; the human owns schema.md, category structure, and high-level decisions. Do not modify schema without human approval.
+- **Contradictions require human judgment** — when Lint finds conflicting claims across pages, flag them for human review with both sides cited. Do not silently resolve contradictions by picking one side.

@@ -30,6 +30,7 @@ Every wiki page uses this frontmatter + structure:
 title: Page Title
 category: concepts | integrations | competitors | patterns | lessons
 tags: [tag1, tag2]
+status: seedling | developing | mature
 sources: [filename in raw/sources, or URL]
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
@@ -81,7 +82,17 @@ Use `→ raw/sources/filename.md` to cite raw sources inline.
 
 Valid actions: `ingest`, `query`, `lint`, `update`, `restructure`, `capture`
 
+## Page Status
+
+Pages track maturity to signal how much trust to place in their content:
+
+- **seedling** — newly created, minimal content, may be incomplete or speculative
+- **developing** — has substance but needs further sources or cross-validation
+- **mature** — well-sourced, cross-linked, reviewed — stable enough to cite confidently
+
+New pages default to `seedling`. Promote during Ingest or Lint as content grows.
+
 ## Roles
 
-- **Human**: curates raw sources, asks questions, directs analysis, makes decisions
-- **LLM**: writes and maintains all wiki content, never modifies raw sources
+- **Human**: curates raw sources, asks questions, directs analysis, makes decisions, owns the schema (meta-layer)
+- **LLM**: writes and maintains all wiki content pages, never modifies raw sources or schema without human approval

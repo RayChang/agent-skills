@@ -21,10 +21,18 @@ kb/
 
 Categories in `wiki/` are defined when the KB is initialized and reflect the project's domain. Do not add new top-level category directories without updating this file.
 
+## Page Status
+
+- **seedling** — newly created, incomplete or speculative
+- **developing** — has substance, needs more sources or cross-validation
+- **mature** — well-sourced, cross-linked, stable
+
+New pages default to `seedling`. Promote during Ingest or Lint.
+
 ## Roles
 
-- **Human**: curates raw sources, asks questions, directs analysis, makes decisions
-- **LLM**: writes and maintains all wiki content, never modifies raw sources
+- **Human**: curates raw sources, asks questions, directs analysis, makes decisions, owns the schema (meta-layer)
+- **LLM**: writes and maintains all wiki content pages, never modifies raw sources or schema without human approval
 
 ## Page Format
 
@@ -35,6 +43,7 @@ Every wiki page uses this structure:
 title: Page Title
 category: {category}
 tags: [tag1, tag2]
+status: seedling | developing | mature
 sources: [filename in raw/sources, or URL]
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
