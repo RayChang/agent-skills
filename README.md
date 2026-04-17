@@ -9,6 +9,8 @@
 ![Skills](https://img.shields.io/badge/skills-3-blue)
 ![Docs](https://img.shields.io/badge/docs-繁體中文-green)
 
+**繁體中文** · [English](./README.en.md)
+
 </div>
 
 ---
