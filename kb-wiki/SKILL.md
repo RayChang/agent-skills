@@ -61,7 +61,17 @@ To initialize a KB when a project has none:
 
    ---
    ```
-6. Tell the user: KB initialized with categories: {list}. Drop source documents into `kb/raw/sources/` and run `/kb-wiki ingest`.
+6. Register the KB in the project's agent config so any LLM entering the project auto-discovers it (without needing to invoke this skill first):
+   - Detect agent config files in the project root: `CLAUDE.md`, `AGENTS.md`
+   - If neither exists, create `CLAUDE.md`
+   - For every detected (or newly created) file, append the section below — **skip any file that already contains a `## Knowledge Base` heading** (idempotent):
+     ```markdown
+
+     ## Knowledge Base
+
+     This project maintains a knowledge base under `kb/`. Conventions, page format, and workflows (ingest / query / lint / map / capture) are defined in `kb/schema.md`. Read it before any KB operation.
+     ```
+7. Tell the user: KB initialized with categories: {list}. Schema registered in {CLAUDE.md / AGENTS.md}. Drop source documents into `kb/raw/sources/` and run `/kb-wiki ingest`.
 
 ---
 
