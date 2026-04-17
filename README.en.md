@@ -141,6 +141,12 @@ Uses Microsoft's [markitdown](https://github.com/microsoft/markitdown) to conver
 npx skills add RayChang/agent-skills@markitdown
 ```
 
+#### ⚙️ First-Time Setup
+
+After install, run `/markitdown setup` once (or tell Claude "set up markitdown"). This appends a `## File & URL Reading` section to `~/.claude/CLAUDE.md` so Claude **auto-prefers markitdown over WebFetch/Read** whenever you hand it a file or URL. The operation is idempotent — if the section already exists, it skips.
+
+For project-level registration instead, run `/markitdown setup --project` (writes to the project's `CLAUDE.md`).
+
 ---
 
 ### ✅ `cove`

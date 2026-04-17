@@ -141,6 +141,12 @@ flowchart LR
 npx skills add RayChang/agent-skills@markitdown
 ```
 
+#### ⚙️ 首次使用（setup）
+
+安裝後執行一次 `/markitdown setup`（或告訴 Claude「設定 markitdown」），會在 `~/.claude/CLAUDE.md` 自動追加 `## File & URL Reading` 區塊，讓 Claude 日後收到檔案或 URL 時**優先使用 markitdown 而非 WebFetch/Read**。操作是 idempotent 的——已有區塊就跳過。
+
+要寫進專案層級的設定，執行 `/markitdown setup --project`（對象改為該專案的 `CLAUDE.md`）。
+
 ---
 
 ### ✅ `cove`

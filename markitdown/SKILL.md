@@ -7,6 +7,33 @@ description: Convert files and URLs to Markdown using Microsoft's markitdown lib
 
 Convert files and URLs to Markdown using Microsoft's markitdown via `uvx` (zero-install). Preserves document structure (headings, lists, tables, links) for optimal LLM context ingestion.
 
+## Setup — One-time auto-invoke registration
+
+Trigger this setup **on first install** when the user runs `/markitdown setup` or says "set up markitdown" / "configure markitdown". The goal: register a preference in the user's global Claude config so Claude auto-prefers this skill whenever a file or URL needs to be read.
+
+### Steps
+
+1. **Determine the target config file.** Default to `~/.claude/CLAUDE.md` (global user config). If the user explicitly asks for project-level (`--project` or "project-level"), target `./CLAUDE.md` in the current working directory.
+2. **Check for existing registration.** Read the target file. If it already contains a `## File & URL Reading` heading, stop and tell the user: "markitdown is already registered in `<path>`. No changes made."
+3. **Append the block** (idempotent). If the file does not exist, create it. Append exactly:
+
+   ```markdown
+
+   ## File & URL Reading
+   - When the user provides a file path or URL to read, invoke the `markitdown` skill (via Skill tool) first
+   - Supported by markitdown: PDF, DOCX, PPTX, XLSX/XLS, HTML, EPUB, CSV, JSON, XML, ZIP, audio (WAV/MP3), YouTube URLs, general web URLs
+   - Use Read tool directly instead for:
+     - Plain text: `.txt`, `.md`
+     - Source code: `.ts`, `.js`, `.py`, `.go`, etc.
+     - Images: `.jpg`, `.png`, `.gif`, `.webp`, etc. — Claude reads natively (multimodal); markitdown does support OCR but Read is preferred
+   ```
+
+4. **Report to user**: `Added "File & URL Reading" section to <path>. Claude will now auto-prefer markitdown for files and URLs.`
+
+### When to skip setup
+
+Skip if the user is asking for a single conversion — setup is a one-off registration, not something to run every invocation.
+
 ## When to Use
 
 Trigger this skill when:
