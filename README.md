@@ -8,6 +8,20 @@
 npx skills add RayChang/agent-skills@<skill-name>
 ```
 
+安裝後 skill 會放在 `~/.claude/skills/<skill-name>/`，Claude Code 啟動時會自動載入。
+
+## 使用
+
+Skills 可透過兩種方式觸發：
+
+1. **自然語言** — 直接描述需求，Claude 會根據 skill 的描述自動選用。
+   - 例：「把這份 PDF 轉成 markdown」→ 自動使用 `markitdown`
+   - 例：「幫這個專案建立 KB」→ 自動使用 `kb-wiki`
+2. **Slash command** — 輸入 `/<skill-name>` 或 `/<skill-name> <operation>`。
+   - 例：`/kb-wiki init`、`/cove`
+
+想確認是否安裝成功，在 Claude Code 中輸入 `/` 查看可用列表，或執行 `/help`。
+
 ---
 
 ## Skills
@@ -30,6 +44,25 @@ npx skills add RayChang/agent-skills@<skill-name>
 ```bash
 npx skills add RayChang/agent-skills@kb-wiki
 ```
+
+**首次使用（init）：**
+
+1. `cd` 進入要建立知識庫的專案目錄
+2. 執行 `/kb-wiki init`（或告訴 Claude「初始化這個專案的 KB」）
+3. Claude 會讀取 `CLAUDE.md` / `README.md` / `package.json` 了解專案性質，提案合適的分類結構讓你確認
+4. 確認後自動建立：
+   - `kb/raw/sources/`、`kb/raw/assets/`（原始素材層，不可變動）
+   - `kb/wiki/{categories}/`（LLM 維護的 wiki 層）
+   - `kb/schema.md`（本專案的 KB 規則）
+   - `kb/wiki/index.md`、`kb/wiki/log.md`
+   - 在專案根的 `CLAUDE.md`（若不存在會建立）或 `AGENTS.md` 附加 `## Knowledge Base` 區塊，讓後續任何 LLM agent 進專案都能自動發現 KB
+
+**日常流程：**
+
+1. 把文件丟進 `kb/raw/sources/`（PDF、文章、會議紀錄等；搭配 Obsidian Web Clipper 擷取網頁最方便）
+2. `/kb-wiki ingest` — LLM 讀取、摘要、整合進 wiki，更新 index 與 log
+3. 有問題就 `/kb-wiki query <問題>` 或自然語言提問，好答案會自動歸檔回 wiki
+4. 定期 `/kb-wiki lint` 與 `/kb-wiki map` 維護健康度
 
 ---
 
