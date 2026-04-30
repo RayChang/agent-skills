@@ -72,8 +72,8 @@ Route each question by its `tier`:
 
 **For `tier: deep` questions — dispatch an Agent subagent (real context isolation):**
 
-- Use the Agent tool with `subagent_type: general-purpose`
-- Dispatch all deep questions in **parallel** (single message, multiple Agent tool calls) to minimize latency
+- Use the subagent tool available on your platform (e.g., `invoke_agent` with `agent_name: generalist` for Gemini CLI, or `Agent` tool with `subagent_type: general-purpose` for Claude Code).
+- Dispatch all deep questions in **parallel** (single message, multiple subagent calls) to minimize latency
 - Prompt template for each subagent:
 
   ```

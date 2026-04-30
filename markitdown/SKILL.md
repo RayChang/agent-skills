@@ -13,7 +13,9 @@ Trigger this setup **on first install** when the user runs `/markitdown setup` o
 
 ### Steps
 
-1. **Determine the target config file.** Default to `~/.claude/CLAUDE.md` (global user config). If the user explicitly asks for project-level (`--project` or "project-level"), target `./CLAUDE.md` in the current working directory.
+1. **Determine the target config file.** 
+   - **Global**: Default to `~/.gemini/GEMINI.md` (for Gemini CLI) or `~/.claude/CLAUDE.md` (for Claude Code).
+   - **Project-level**: Target the primary config file in the current working directory (`GEMINI.md`, `CLAUDE.md`, or `AGENTS.md`).
 2. **Check for existing registration.** Read the target file. If it already contains a `## File & URL Reading` heading, stop and tell the user: "markitdown is already registered in `<path>`. No changes made."
 3. **Append the block** (idempotent). If the file does not exist, create it. Append exactly:
 

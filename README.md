@@ -2,10 +2,11 @@
 
 # 🛠️ Agent Skills
 
-**適用於 [Claude Code](https://claude.com/claude-code) 的 agent skills 集合**
+**適用於 [Claude Code](https://claude.com/claude-code) 與 [Gemini CLI](https://github.com/google/gemini-cli) 的通用 agent skills 集合**
 
 [![GitHub](https://img.shields.io/badge/GitHub-RayChang%2Fagent--skills-181717?logo=github)](https://github.com/RayChang/agent-skills)
 [![Claude Code](https://img.shields.io/badge/Claude-Code-D97757?logo=anthropic&logoColor=white)](https://claude.com/claude-code)
+[![Gemini CLI](https://img.shields.io/badge/Gemini-CLI-4285F4?logo=google-gemini&logoColor=white)](https://github.com/google/gemini-cli)
 ![Skills](https://img.shields.io/badge/skills-3-blue)
 ![Docs](https://img.shields.io/badge/docs-繁體中文-green)
 
@@ -31,7 +32,7 @@
 npx skills add RayChang/agent-skills@<skill-name>
 ```
 
-> 安裝後 skill 會放在 `~/.claude/skills/<skill-name>/`，Claude Code 啟動時會自動載入。
+> 安裝後 skill 會放在 `~/.claude/skills/` (Claude) 或 `~/.gemini/extensions/` (Gemini) 下，Agent 啟動時會自動載入。
 
 ---
 
@@ -41,7 +42,7 @@ Skills 可透過兩種方式觸發：
 
 ### 1️⃣ 自然語言觸發
 
-直接描述需求，Claude 會根據 skill 的描述自動選用：
+直接描述需求，Agent 會根據 skill 的描述自動選用：
 
 | 說出這句話 | 自動觸發 |
 |---|---|
@@ -59,7 +60,7 @@ Skills 可透過兩種方式觸發：
 /cove                # 驗證上一則回答
 ```
 
-> 💡 在 Claude Code 中輸入 `/` 可查看所有可用 skill，或執行 `/help` 查看說明。
+> 💡 在 Agent 中輸入 `/` 可查看所有可用 skill，或執行 `/help` 查看說明。
 
 ---
 
@@ -77,7 +78,7 @@ Skills 可透過兩種方式觸發：
 |---|---|---|
 | **Raw sources** | `kb/raw/sources/` | 人類（不可變） |
 | **Wiki** | `kb/wiki/` | LLM（完全維護） |
-| **Schema** | `kb/schema.md` + `CLAUDE.md` | 人類定義、LLM 遵循 |
+| **Schema** | `kb/schema.md` + `GEMINI.md`/`CLAUDE.md` | 人類定義、LLM 遵循 |
 
 #### 🔧 支援操作
 
@@ -99,14 +100,14 @@ npx skills add RayChang/agent-skills@kb-wiki
 #### 🎬 首次使用（init）
 
 1. `cd` 進入要建立知識庫的專案目錄
-2. 執行 `/kb-wiki init`（或告訴 Claude「初始化這個專案的 KB」）
-3. Claude 讀取 `CLAUDE.md` / `README.md` / `package.json`，提案合適的分類結構讓你確認
+2. 執行 `/kb-wiki init`（或告訴 Agent「初始化這個專案的 KB」）
+3. Agent 讀取 `GEMINI.md` / `CLAUDE.md` / `README.md` / `package.json`，提案合適的分類結構讓你確認
 4. 確認後自動建立：
    - 📁 `kb/raw/sources/`、`kb/raw/assets/`（原始素材層，不可變動）
    - 📁 `kb/wiki/{categories}/`（LLM 維護的 wiki 層）
    - 📄 `kb/schema.md`（本專案的 KB 規則）
    - 📄 `kb/wiki/index.md`、`kb/wiki/log.md`
-   - 📝 在專案根的 `CLAUDE.md` 附加 `## Knowledge Base` 區塊，讓後續任何 LLM agent 進專案都能自動發現 KB
+   - 📝 在專案根的 `GEMINI.md` 或 `CLAUDE.md` 附加 `## Knowledge Base` 區塊，讓後續任何 LLM agent 進專案都能自動發現 KB（自動偵測平台適配）
 
 #### 🔄 日常流程
 
@@ -143,9 +144,9 @@ npx skills add RayChang/agent-skills@markitdown
 
 #### ⚙️ 首次使用（setup）
 
-安裝後執行一次 `/markitdown setup`（或告訴 Claude「設定 markitdown」），會在 `~/.claude/CLAUDE.md` 自動追加 `## File & URL Reading` 區塊，讓 Claude 日後收到檔案或 URL 時**優先使用 markitdown 而非 WebFetch/Read**。操作是 idempotent 的——已有區塊就跳過。
+安裝後執行一次 `/markitdown setup`（或告訴 Agent「設定 markitdown」），會在全域設定檔（如 `~/.gemini/GEMINI.md` 或 `~/.claude/CLAUDE.md`）自動追加 `## File & URL Reading` 區塊，讓 Agent 日後收到檔案或 URL 時**優先使用 markitdown 而非 WebFetch/Read**。操作是 idempotent 的——已有區塊就跳過。
 
-要寫進專案層級的設定，執行 `/markitdown setup --project`（對象改為該專案的 `CLAUDE.md`）。
+要寫進專案層級的設定，執行 `/markitdown setup --project`（對象改為該專案的 `GEMINI.md` 或 `CLAUDE.md`）。
 
 ---
 
@@ -175,7 +176,7 @@ npx skills add RayChang/agent-skills@markitdown
 | **🔬 `deep`** | Dispatch Agent subagent（fresh context，真正隔離） | 具體數字／版本／API、具名引用、法律/醫療/合規、冷門主題、User 會直接採用的結論 |
 | **🪶 `shallow`** | In-context 驗證（軟約束：不參照原稿） | <3 claim、常識、主觀觀點、依賴對話 context |
 
-> 💡 `deep` 路徑接近原論文的 **Factored** 變體——fresh context 防止模型錨定自己的原稿而重複幻覺；`deep` 問題可平行 dispatch 壓低延遲。
+> 💡 `deep` 路徑接近原論文的 **Factored** 變體——透過 `invoke_agent` (Gemini CLI) 或 `Agent` (Claude Code) 呼叫子代理人，其 fresh context 可防止模型錨定自己的原稿而重複幻覺；`deep` 問題可平行 dispatch 壓低延遲。
 
 #### 📥 安裝
 
