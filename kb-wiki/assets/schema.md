@@ -101,6 +101,15 @@ Rebuild navigation structure:
 - Regenerate `{category}/_moc.md` files
 - Add missing cross-links between related pages
 
+### Verify
+
+Drift audit — check wiki pages against the actual codebase (distinct from Lint's internal-health check):
+
+- Classify pages: code-verifiable / forward-design / external (skip external)
+- Extract concrete claims (paths, aliases, symbols, configs) and verify against real files with `file:line`
+- Verdicts: ✅ match / ⚠️ drift / 🅿️ not-yet-built / ❓ unverifiable
+- Fix drifts, then independently re-verify; forward-design prescriptions are not drift
+
 ### Capture
 
 After completing a Phase or significant implementation block:
@@ -123,4 +132,4 @@ Each entry: `- [[category/page-name]] — one-line summary`
 - Pages created/updated: [[page1]], [[page2]]
 ```
 
-Actions: `ingest`, `query`, `lint`, `map`, `capture`, `update`, `restructure`
+Actions: `ingest`, `query`, `lint`, `map`, `verify`, `capture`, `update`, `restructure`
