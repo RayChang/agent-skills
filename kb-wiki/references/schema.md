@@ -80,7 +80,7 @@ Use `→ raw/sources/filename.md` to cite raw sources inline.
 - Pages updated: [[page2]]
 ```
 
-Valid actions: `ingest`, `query`, `lint`, `update`, `restructure`, `capture`
+Valid actions: `ingest`, `query`, `lint`, `map`, `verify`, `update`, `restructure`, `capture`
 
 ## Page Status
 

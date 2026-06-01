@@ -1,6 +1,6 @@
 ---
 name: kb-wiki
-description: This skill should be used when working with a project knowledge base that follows the Karpathy LLM Wiki pattern. It provides workflows for ingesting source documents, querying the KB, running health checks (lint), capturing design decisions and lessons learned, and initializing a new KB in a project. Trigger when the user mentions the KB, asks to ingest a source, run a query against the wiki, capture learnings, or set up a knowledge base.
+description: This skill should be used when working with a project knowledge base that follows the Karpathy LLM Wiki pattern. It provides workflows for ingesting source documents, querying the KB, running health checks (lint), verifying the wiki against the actual codebase (drift audit), capturing design decisions and lessons learned, and initializing a new KB in a project. Trigger when the user mentions the KB, asks to ingest a source, run a query against the wiki, check whether the KB has drifted from the code, capture learnings, or set up a knowledge base.
 ---
 
 # KB Wiki Skill
@@ -15,7 +15,7 @@ A methodology for LLM-maintained knowledge bases based on Andrej Karpathy's LLM 
 
 ## Guard: check KB exists before any operation
 
-Before running Ingest, Query, Lint, Map, or Capture — check whether `kb/wiki/index.md` exists. If it does not, stop and tell the user:
+Before running Ingest, Query, Lint, Map, Verify, or Capture — check whether `kb/wiki/index.md` exists. If it does not, stop and tell the user:
 
 > "這個專案還沒有 KB。先執行 `/kb-wiki init` 初始化。"
 
@@ -146,6 +146,51 @@ If Bun is unavailable (command not found), fall back to doing it manually:
 
 ---
 
+### Verify — Check the wiki against the actual codebase (drift audit)
+
+Lint checks the wiki's *internal* health (broken links, orphans, contradictions). Verify checks its *external* alignment — whether pages still match the code they describe. Run periodically and before relying on the KB for a decision.
+
+**1. Classify every page first — this is the step naive audits skip:**
+
+| Page kind | Describes | Action |
+|---|---|---|
+| **code-verifiable** | in-repo implementation: file paths, import aliases, token/symbol names, signatures, config values, CLI commands, dependency versions, module-boundary tags | verify against code |
+| **forward-design** | a not-yet-built design / future intent | do NOT flag prescriptions as drift; only verify any "current state / 現況" snapshot it asserts |
+| **external / decision** | rejected options, third-party tool capabilities, competitor notes, historical decisions | out of scope — skip (no in-repo target to drift against) |
+
+State which pages you skipped and why. Discover the set from `kb/wiki/index.md` + the directory structure; never assume.
+
+**2. Extract concrete claims** from each code-verifiable page: every path, `@alias/*`, token/symbol name, function signature, config key, command, version, tag.
+
+**3. Verify each claim against the real files.** Open the actual source, config (tsconfig / build config / package manifest), and module-boundary tags — do NOT eyeball or trust the page. Cite `file:line` for every verdict.
+
+**4. Assign a verdict per claim:**
+
+| Verdict | Meaning |
+|---|---|
+| ✅ match | KB matches code |
+| ⚠️ DRIFT | KB says X, code says Y — quote both + `file:line` |
+| 🅿️ not-yet-built | forward-design prescription; **not** drift |
+| ❓ unverifiable | cannot confirm from the repo (say why) |
+
+**5. Scale with parallel subagents** for a large KB — partition pages into groups, one subagent per group, each returning a drift table with `file:line` evidence. **REQUIRED SUB-SKILL** for the fan-out: superpowers:dispatching-parallel-agents.
+
+**6. Fix, then INDEPENDENTLY re-verify.** After correcting drifted pages, run a second verification pass — ideally a fresh subagent told NOT to assume your fixes are right — over the edited pages. Bump each fixed page's `updated` date and add a one-line drift-correction note at the top.
+
+**7. Append to `kb/wiki/log.md`:**
+```
+## [YYYY-MM-DD] verify | Drift audit: N pages checked, M drifts fixed
+- Scope: code-verifiable pages (skipped: <external/forward-design pages + why>)
+- Drifts fixed: [[page]] — was X, now Y
+- Re-verified: clean / remaining ⚠️: ...
+```
+
+**Close two loopholes:**
+- **Forward-design ≠ drift.** Do not report a forward-design page as drift just because the thing it describes "doesn't exist yet." If the page honestly states future intent and asserts no false current-state, it is 🅿️, not ⚠️. Conversely, a forward-design page's concrete "現況" snapshot (e.g. "lib X is empty", "Y is not installed") CAN drift and must be checked.
+- **Structure sketch ≠ precise path claim.** A high-level directory/structure diagram may use conventional shorthand (e.g. omitting an NX `src/lib/` segment, eliding `node_modules`). Flag a path ⚠️ only if it points to the **wrong** lib/dir or a non-existent location — not merely because a conceptual sketch is abbreviated. Hold "the symbol lives exactly at `<path>`" claims to the exact path; judge structure overviews by whether they'd mislead, not by literal completeness.
+
+---
+
 ### Map — Rebuild index, MOCs, and cross-links
 
 Use the Bash tool to run the script directly (deterministic, no extra tokens):
@@ -222,3 +267,4 @@ To capture learnings at the end of a significant implementation block:
 - **Never assume categories** — always discover them from the actual directory structure or ask during init
 - **LLM owns content, human owns meta** — the LLM writes and maintains all wiki content pages; the human owns schema.md, category structure, and high-level decisions. Do not modify schema without human approval.
 - **Contradictions require human judgment** — when Lint finds conflicting claims across pages, flag them for human review with both sides cited. Do not silently resolve contradictions by picking one side.
+- **Verify ≠ Lint** — Lint is internal wiki health; Verify is alignment with the code. Forward-design pages are not drift; only the current-state claims they assert can drift. Always re-verify fixes independently.
