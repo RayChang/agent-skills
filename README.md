@@ -89,7 +89,10 @@ Skills 可透過兩種方式觸發：
 | `query` | 以 wiki 內容回答問題，答案歸檔回 wiki |
 | `lint` | 健康檢查：斷鏈、孤立頁面、矛盾內容 |
 | `map` | 重建 index、MOC 及交叉連結 |
+| `verify` | 對照實際 codebase 檢查 wiki 是否漂移（drift audit） |
 | `capture` | 在里程碑結束後萃取設計決策與教訓 |
+
+> 💡 **`verify` ≠ `lint`**：`lint` 檢查 wiki 的*內部*健康（斷鏈、孤立、矛盾）；`verify` 檢查*外部*校準——頁面是否仍與它描述的程式碼一致。Forward-design（尚未實作的設計）頁面不算漂移，只有頁面宣稱的「現況」才會被檢查；修正後一律以獨立 pass 重新驗證。
 
 #### 📥 安裝
 
@@ -117,7 +120,7 @@ flowchart LR
     B --> C[📚 wiki 自動更新<br/>index + log]
     C --> D[💬 /kb-wiki query<br/>或直接提問]
     D --> E[📝 答案歸檔回 wiki]
-    E --> F[🔧 定期 lint / map<br/>維護健康度]
+    E --> F[🔧 定期 lint / map / verify<br/>維護健康度與校準]
 ```
 
 ---
