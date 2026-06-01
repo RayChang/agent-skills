@@ -88,7 +88,10 @@ Based on [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/4
 | `query` | Answer a question from the wiki; file substantial answers back |
 | `lint` | Health check: broken links, orphan pages, contradictions |
 | `map` | Rebuild index, MOCs, and cross-links |
+| `verify` | Drift audit: check wiki pages against the actual codebase |
 | `capture` | Extract design decisions and lessons after a milestone |
+
+> 💡 **`verify` ≠ `lint`**: `lint` checks the wiki's *internal* health (broken links, orphans, contradictions); `verify` checks its *external* alignment — whether pages still match the code they describe. Forward-design pages aren't drift; only the current-state claims they assert can drift. Fixes are always re-verified in an independent pass.
 
 #### 📥 Install
 
@@ -116,7 +119,7 @@ flowchart LR
     B --> C[📚 Wiki updated<br/>index + log]
     C --> D[💬 /kb-wiki query<br/>or just ask]
     D --> E[📝 Answers filed<br/>back to wiki]
-    E --> F[🔧 Periodic lint / map<br/>to stay healthy]
+    E --> F[🔧 Periodic lint / map / verify<br/>to stay healthy & aligned]
 ```
 
 ---
