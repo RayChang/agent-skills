@@ -72,4 +72,7 @@ retrieved chunks to `SearchResult(title, snippet, url)`.
 
 `cove/SKILL.md` is the agent-native version of this same pipeline (its "tools" are the
 agent's own parallel search-subagents). This package is for embedding CoVe 2.0 in your
-own LLM application. Both share the same Phase 1 / Phase 3 prompt contracts.
+own LLM application. Both share the same Phase 1 / Phase 3 *semantic* contracts (same fields and rules —
+open verification questions, draft-blind deep verification, citations, honest "unable
+to verify"); they differ only in serialization: the skill renders Markdown, this
+package emits JSON.
