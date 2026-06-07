@@ -128,7 +128,13 @@ async def phase3_finalize(llm: LLMClient, draft: str, results: list[ClaimResult]
 async def run(query: str, llm: LLMClient, search: SearchProvider, *, max_iterations: int = 1) -> FinalAnswer:
     """End-to-end pipeline. ``max_iterations`` > 1 enables the optional CRITIC-style
     verify-then-correct loop (C5, default off): after finalizing, re-verify and
-    re-finalize while corrections were made, up to ``max_iterations`` total passes."""
+    re-finalize while corrections were made, up to ``max_iterations`` total passes.
+    Values <= 1 run a single pass.
+
+    Simplification: each iteration re-verifies *all* claims, not only the corrected
+    ones (the plan and SKILL.md describe "re-verify corrected claims" as the ideal).
+    This keeps the reference simple; selective re-verification is left as an extension.
+    """
     plan = await phase1_plan(llm, query)
     if not plan.needs_verification:
         return FinalAnswer(
