@@ -95,3 +95,31 @@ async def phase2_verify(plan: Plan, search: SearchProvider, llm: LLMClient) -> l
     deep_results = await asyncio.gather(*(_verify_deep(c, search, llm) for c in deep))
     shallow_results = await asyncio.gather(*(_verify_shallow(c, llm) for c in shallow))
     return list(deep_results) + list(shallow_results)
+
+
+def _format_results(results: list[ClaimResult]) -> str:
+    blocks = []
+    for r in results:
+        basis = "external evidence" if r.externally_grounded else "internal reasoning (no external evidence)"
+        sources = ", ".join(r.sources) if r.sources else "(none)"
+        blocks.append(
+            f"- Claim: {r.claim.text}\n"
+            f"  Verified answer: {r.answer}\n"
+            f"  Confidence: {r.confidence}\n"
+            f"  Basis: {basis}\n"
+            f"  Sources: {sources}"
+        )
+    return "\n".join(blocks) if blocks else "(no claims verified)"
+
+
+async def phase3_finalize(llm: LLMClient, draft: str, results: list[ClaimResult]) -> FinalAnswer:
+    """Phase 3: strict review of draft vs. verification results; emit revision + citations."""
+    system = _load_prompt("phase3.md")
+    user = f"Original draft:\n{draft}\n\nVerification results:\n{_format_results(results)}"
+    raw = await llm.complete_json(system, user, PHASE3_JSON_SCHEMA)
+    return FinalAnswer(
+        summary=raw.get("summary", {}),
+        corrections=list(raw.get("corrections", [])),
+        revised=raw.get("revised", draft),
+        citations=list(raw.get("citations", [])),
+    )
