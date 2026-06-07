@@ -21,7 +21,7 @@
 |---|---|---|
 | [📚 `kb-wiki`](#-kb-wiki) | LLM-driven personal knowledge base (Karpathy LLM Wiki pattern) | `/kb-wiki <op>` |
 | [📝 `markitdown`](#-markitdown) | File / URL → Markdown conversion | Natural language |
-| [✅ `cove`](#-cove) | Chain-of-Verification self-verification workflow | `/cove` |
+| [✅ `cove`](#-cove) | Agentic CoVe 2.0: open-book three-phase self-verification | `/cove` |
 
 ---
 
@@ -154,31 +154,39 @@ For project-level registration instead, run `/markitdown setup --project` (write
 
 ### ✅ `cove`
 
-Based on Meta AI's [Chain-of-Verification (CoVe) paper](https://arxiv.org/abs/2309.11495). A structured four-step self-verification workflow that reduces LLM hallucination.
+Built on Meta AI's [Chain-of-Verification (CoVe)](https://arxiv.org/abs/2309.11495) and
+Microsoft's [CRITIC](https://arxiv.org/abs/2305.11738), this upgrades the original
+**closed-book** self-verification into an **open-book (tool-interactive)** three-phase
+pipeline — exactly the extension the CoVe paper proposes in its own conclusion.
 
-Manually triggered with `/cove` to verify and revise a previous response (or specified content).
+Manually triggered with `/cove` to verify and refine the previous response (or supplied
+text).
 
-#### 🔄 Four-Step Flow
+#### 🔄 Three-phase pipeline
 
-| Step | Action | Purpose |
+| Phase | Action | Purpose |
 |---|---|---|
-| **1️⃣** | Identify the draft to verify | Establish baseline |
-| **2️⃣** | Plan verification questions and tag each tier | Target facts, technical claims, logical assertions |
-| **3️⃣** | Tier-based verification | `deep` → subagent (fresh context); `shallow` → in-context |
-| **4️⃣** | Revise draft against verification results | Flag anything unverifiable |
+| **1️⃣ Draft & Plan** | Draft the answer and emit a JSON verification plan | `needs_verification` gate short-circuits chitchat/common knowledge |
+| **2️⃣ Tiered Verify** | `deep` → open-book parallel search-subagents; `shallow` → conservative closed-book | Ground claims in external evidence |
+| **3️⃣ Critique & Finalize** | Strict review against evidence, rewrite with citations | Corrections cite sources; unsupported claims stated honestly |
 
-> Suitable for fact-heavy answers, technical explanations, or any response where accuracy matters.
+#### 🎯 Tier routing
 
-#### 🎯 Tier Routing
-
-Not every claim deserves the same rigor. Each verification question is first classified as `deep` or `shallow`, then routed accordingly:
-
-| Tier | Verification | When to apply |
+| Tier | How | When |
 |---|---|---|
-| **🔬 `deep`** | Dispatch Agent subagent (fresh context, real isolation) | Specific numbers/versions/APIs, named references, legal/medical/compliance content, niche topics, conclusions the user will act on |
-| **🪶 `shallow`** | In-context verification (soft constraint: don't reference the draft) | < 3 claims, common knowledge, subjective opinions, context-dependent claims |
+| **🔬 `deep`** | Open-book: parallel search-subagent (fresh context, **never sees the draft**) | numbers/versions/APIs, named references, legal/medical/compliance, niche topics, conclusions the user will act on |
+| **🪶 `shallow`** | Closed-book, conservative (caveats only, no confident rewrite) | logic/reasoning, context-dependent, common knowledge, opinion |
 
-> 💡 The `deep` path is close to the paper's **Factored** variant — fresh context prevents the model from anchoring on and repeating its own draft hallucinations. Deep questions can be dispatched in parallel to keep latency low.
+> 💡 The `deep` path keeps CoVe's **Factored isolation** (the verifier can't see the
+> draft, avoiding repeated hallucination) and adds CRITIC's **open-book grounding**.
+> `shallow` is deliberately conservative because CRITIC shows self-correction without
+> external feedback can fail to help or even degrade the answer.
+
+#### 🐍 Reference implementation
+
+`cove/reference/` ships a provider-agnostic Python implementation (`asyncio` parallel
+verification, pluggable `LLMClient` / `SearchProvider`) for embedding CoVe 2.0 in your
+own LLM app. See `cove/reference/README.md`.
 
 #### 📥 Install
 
