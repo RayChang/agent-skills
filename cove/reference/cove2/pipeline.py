@@ -123,3 +123,25 @@ async def phase3_finalize(llm: LLMClient, draft: str, results: list[ClaimResult]
         revised=raw.get("revised", draft),
         citations=list(raw.get("citations", [])),
     )
+
+
+async def run(query: str, llm: LLMClient, search: SearchProvider, *, max_iterations: int = 1) -> FinalAnswer:
+    """End-to-end pipeline. ``max_iterations`` > 1 enables the optional CRITIC-style
+    verify-then-correct loop (C5, default off): after finalizing, re-verify and
+    re-finalize while corrections were made, up to ``max_iterations`` total passes."""
+    plan = await phase1_plan(llm, query)
+    if not plan.needs_verification:
+        return FinalAnswer(
+            summary={"checked": 0, "confirmed": 0, "corrected": 0, "uncertain": 0},
+            corrections=[], revised=plan.draft, citations=[],
+        )
+
+    results = await phase2_verify(plan, search, llm)
+    final = await phase3_finalize(llm, plan.draft, results)
+
+    iterations = 1
+    while iterations < max_iterations and final.corrections:
+        results = await phase2_verify(plan, search, llm)
+        final = await phase3_finalize(llm, final.revised, results)
+        iterations += 1
+    return final
