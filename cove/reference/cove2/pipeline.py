@@ -53,7 +53,7 @@ def parse_verifier_output(text: str) -> tuple[str, str]:
         if lowered.startswith("answer:"):
             answer = stripped.split(":", 1)[1].strip()
         elif lowered.startswith("confidence:"):
-            confidence = stripped.split(":", 1)[1].strip()
+            confidence = stripped.split(":", 1)[1].strip().capitalize()
     return answer, confidence
 
 
@@ -82,10 +82,15 @@ async def _verify_shallow(claim: Claim, llm: LLMClient) -> ClaimResult:
 
 
 async def phase2_verify(plan: Plan, search: SearchProvider, llm: LLMClient) -> list[ClaimResult]:
-    """Phase 2: route by tier. Deep claims verify open-book in parallel; shallow stay closed-book."""
+    """Phase 2: route by tier. Deep claims verify open-book in parallel; shallow stay closed-book.
+
+    If any verifier coroutine raises, the exception propagates (asyncio.gather's
+    default, return_exceptions=False) and partial results are not returned.
+    """
     if not plan.needs_verification:
         return []
     deep = [c for c in plan.claims if c.tier == "deep"]
+    # any tier other than "deep" is treated conservatively (closed-book) by design
     shallow = [c for c in plan.claims if c.tier != "deep"]
     deep_results = await asyncio.gather(*(_verify_deep(c, search, llm) for c in deep))
     shallow_results = await asyncio.gather(*(_verify_shallow(c, llm) for c in shallow))

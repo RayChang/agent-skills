@@ -1,6 +1,7 @@
 import asyncio
+import pytest
 from cove2.schema import Plan, Claim, SearchResult
-from cove2.pipeline import phase2_verify
+from cove2.pipeline import phase2_verify, parse_verifier_output
 from tests.fakes import FakeLLMClient, FakeSearchProvider
 
 
@@ -48,3 +49,14 @@ def test_gate_false_returns_empty():
     search = FakeSearchProvider(default=[])
     llm = FakeLLMClient()
     assert asyncio.run(phase2_verify(plan, search, llm)) == []
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("", ("unable to verify", "Low")),                                  # empty -> conservative defaults
+    ("Answer: Paris", ("Paris", "Low")),                                # missing Confidence -> default Low
+    ("Answer: foo: bar\nConfidence: High", ("foo: bar", "High")),       # extra colon in answer kept
+    ("answer: paris\nconfidence: high", ("paris", "High")),             # casing: confidence normalized
+    ("  Answer:  spaced \n  Confidence:  medium ", ("spaced", "Medium")),  # whitespace + casing
+])
+def test_parse_verifier_output_edge_cases(text, expected):
+    assert parse_verifier_output(text) == expected
