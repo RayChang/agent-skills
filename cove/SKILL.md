@@ -1,160 +1,169 @@
 ---
 name: cove
-description: Chain-of-Verification (CoVe) — manually triggered self-verification workflow. This skill should be used when the user invokes /cove to verify and refine a previous response through a structured 4-step process (draft → plan verification questions → independent verification → final revision). Ideal for fact-heavy answers, technical explanations, or any response where accuracy is critical.
+description: Agentic Chain-of-Verification (CoVe 2.0) — open-book, tool-interactive self-verification. Manually triggered via /cove to verify and refine a response through a three-phase pipeline (adaptive draft & plan → tiered open-book verification → critique & finalize with citations). Grafts CRITIC's external-tool verification onto CoVe's structured deliberation. Ideal for fact-heavy answers where accuracy is critical.
 ---
 
-# Chain-of-Verification (CoVe)
+# Agentic Chain-of-Verification (CoVe 2.0)
 
-Apply CoVe to verify and refine the most recent response (or a user-specified response) through a structured 4-step self-verification workflow.
+Verify and refine the most recent response (or a `/cove <text>` argument) through a
+three-phase, **open-book** self-verification pipeline. This upgrades the original
+closed-book CoVe by grafting CRITIC's tool-interactive critiquing onto it — exactly the
+extension the CoVe paper proposes in its own conclusion: *"equip CoVe with tool-use,
+e.g., to use retrieval augmentation in the verification execution step."*
 
-## Verification Tiers
+## Why open-book
 
-Not every claim deserves the same rigor. Each claim is classified as **deep** or **shallow** and routed accordingly — this keeps verification cost aligned with risk and gets closer to the paper's Factored variant for high-risk claims.
+The CoVe paper verifies claims using only the model's own knowledge (closed-book). The
+CRITIC paper finds that *"exclusive reliance on self-correction without external feedback
+may yield modest improvements or even deteriorate performance."* So CoVe 2.0 verifies
+high-risk claims against **external evidence** (web search) and reserves confident
+rewriting for claims that evidence actually grounds.
 
-### Tag a claim as `deep` if **any** signal applies
+## Pipeline overview
 
-| Signal | Reason |
-|---|---|
-| 🔢 Specific numbers, dates, versions, API signatures | Most commonly hallucinated class |
-| 🔗 Named references (papers, people, URLs, package names) | Frequently fabricated |
-| 🔬 Niche topic or post-training-cutoff content | Model "knows" but uncertainty is high |
-| ⚖️ Legal / medical / financial / compliance content | Irreversible errors |
-| 🚀 User will act on it without further verification | High error cost |
-| 📊 Draft contains ≥5 verifiable claims | Scale benefits from distribution |
+Phase 1 (Adaptive Draft & Plan) → Phase 2 (Tiered Verification) → Phase 3 (Critique &
+Finalize with Citations). A `needs_verification` gate short-circuits chitchat and common
+knowledge so cost is spent only where it matters.
 
-### Use `shallow` when
+---
 
-- Fewer than 3 verifiable claims total
-- Claim depends on conversation context (a subagent would miss it)
-- Subjective opinion or common knowledge
-- Rapid iteration / brainstorming scenario
+## Phase 1 — Adaptive Draft & Plan
 
-### Routing
+**Identify the draft:**
+- `/cove <text>` → verify that argument text.
+- no argument → verify the most recent substantive response in the conversation.
 
-- **`tier: deep`** → dispatch an Agent subagent per question. Fresh context = real isolation (the paper's Factored variant). Dispatch multiple deep questions in **parallel** (single message, multiple Agent tool calls).
-- **`tier: shallow`** → answer in-context with the "don't reference draft" soft constraint.
+**Emit a plan as JSON.** (Enforced by instruction + the example below — you are following
+instructions, not calling an API with a response schema.)
 
-Deep and shallow can be mixed within a single draft — route each claim independently so cost is spent only where it matters.
-
-## Workflow
-
-### Step 1: Identify the Draft
-
-Check if the user provided arguments after `/cove`:
-
-- **If arguments are provided** (`/cove <text to verify>`): treat the argument text as the draft to verify.
-- **If no arguments**: default to the most recent substantive response in the conversation.
-
-### Step 2: Plan Verification Questions
-
-Analyze the draft and extract key factual claims, technical statements, and logical assertions. For each, generate a targeted verification question **and classify its tier** using the signals in the "Verification Tiers" section above.
-
-Output format:
-
-```
-Verification Questions:
-1. [Factual claim from draft] → Q: [Verification question] | tier: deep
-2. [Technical statement] → Q: [Verification question] | tier: shallow
-...
+```json
+{
+  "draft": "the answer being verified",
+  "needs_verification": true,
+  "claims": [
+    { "text": "a specific factual assertion from the draft",
+      "tier": "deep",
+      "verification_query": "an open factual question for a search engine" },
+    { "text": "a logic / reasoning assertion",
+      "tier": "shallow" }
+  ]
+}
 ```
 
-Focus on claims that are:
-- Specific facts (dates, numbers, names, versions) — usually `deep`
-- Causal or logical relationships — usually `shallow`
-- Technical API/syntax claims — usually `deep`
-- Comparisons or rankings — depends on specificity
+**Rules:**
+- `needs_verification: false` → the draft is chitchat, subjective, or high-certainty
+  common knowledge. Report "no verification needed" and stop.
+- Tag each claim `deep` if **any** signal applies; otherwise `shallow`:
 
-Skip subjective opinions and well-established common knowledge.
+  | deep signal | why |
+  |---|---|
+  | numbers, dates, versions, API signatures | most-hallucinated class |
+  | named references (papers, people, URLs, packages) | frequently fabricated |
+  | niche / post-training-cutoff content | high uncertainty |
+  | legal / medical / financial / compliance | irreversible errors |
+  | user will act on it without re-checking | high error cost |
 
-### Step 3: Independent Verification
+  Use `shallow` for: logic/causal relationships, claims that depend on conversation
+  context, subjective opinion, or common knowledge.
+- Every `deep` claim MUST carry a `verification_query` that is:
+  - an **open factual question**, NOT a yes/no "is X correct?" — the CoVe ablation shows
+    models tend to agree with a yes/no framing whether the fact is right or wrong;
+  - **self-contained** — no pronouns or references to "the draft", because the verifier
+    will not see the draft (Phase 2).
 
-Route each question by its `tier`:
+---
 
-**For `tier: deep` questions — dispatch an Agent subagent (real context isolation):**
+## Phase 2 — Tiered Verification
 
-- Use the subagent tool available on your platform (e.g., `invoke_agent` with `agent_name: generalist` for Gemini CLI, or `Agent` tool with `subagent_type: general-purpose` for Claude Code).
-- Dispatch all deep questions in **parallel** (single message, multiple subagent calls) to minimize latency
-- Prompt template for each subagent:
+Route each claim by `tier`.
 
-  ```
-  Answer this verification question based on your own knowledge.
-  Do NOT fabricate facts — if uncertain, say "unable to verify" explicitly.
+### deep → open-book, parallel, isolated
 
-  Question: <the verification question>
+Dispatch all `deep` claims **in parallel** (single message, multiple subagent calls).
+Each subagent:
+- receives **only its `verification_query`** — never the draft. This preserves CoVe's
+  Factored isolation (a verifier that sees the draft tends to repeat its hallucination)
+  while adding open-book grounding;
+- runs web search and answers the question **from the retrieved evidence only**;
+- returns `answer`, short quoted `evidence`, `source_urls`, and `confidence`
+  (High/Medium/Low). If evidence is insufficient, it returns "unable to verify" rather
+  than guessing.
 
-  Return in this format:
-  - Answer: <concise answer>
-  - Confidence: High | Medium | Low
-  - Source basis: internal knowledge | reasoning | unable to verify
+**Platform tools:**
+- Claude Code: `Agent` (subagent) + `WebSearch`.
+- Gemini CLI: `invoke_agent` + `google_web_search`.
 
-  Do not reference any prior context — answer only from your own knowledge.
-  ```
-
-- The subagent has a fresh context and cannot see the original draft. That isolation is the whole point.
-
-**For `tier: shallow` questions — answer in-context:**
-
-- Answer directly without dispatching
-- Apply the soft constraint: do NOT reference the original draft while answering
-
-For each question, record:
-- The verified answer
-- Confidence level (High / Medium / Low)
-- Source basis (internal knowledge, reasoning, or "unable to verify")
-
-Output format:
+**Subagent prompt template:**
 
 ```
-Verification Results:
-1. Q: [question] | tier: deep
-   A: [subagent answer] | Confidence: [H/M/L] | Source: [basis]
-2. Q: [question] | tier: shallow
-   A: [in-context answer] | Confidence: [H/M/L] | Source: [basis]
-...
+Answer this question using ONLY the web-search evidence you gather. You do NOT have
+access to any prior draft — answer the question on its own terms.
+
+Question: <verification_query>
+
+Steps: run web search, read the top results, then answer.
+If the evidence is insufficient or conflicting, answer exactly "unable to verify".
+Do NOT use unsupported prior knowledge to fill gaps.
+
+Return:
+- Answer: <concise, evidence-based answer, or "unable to verify">
+- Evidence: <1-3 short quoted snippets>
+- Sources: <list of result URLs>
+- Confidence: High | Medium | Low
 ```
 
-### Step 4: Final Revision
+### shallow → closed-book, in-context, conservative
 
-Compare the draft against verification results:
+Answer in-context WITHOUT searching and WITHOUT referencing the draft. Be
+**conservative** (CRITIC: self-correction without external feedback can degrade output):
+only **flag uncertainty or add a caveat** — do NOT confidently rewrite a shallow claim.
+Confident correction is reserved for evidence-grounded deep claims.
 
-1. Identify contradictions between draft claims and verified answers
-2. Identify claims that could not be verified (Low confidence)
-3. Generate a revised response that:
-   - Corrects any contradictions found
-   - Adds caveats to unverifiable claims
-   - Preserves accurate portions unchanged
+---
 
-Output format:
+## Phase 3 — Critique & Finalize with Citations
+
+Act as a strict reviewer. Compare the draft against the verification results:
+
+- For **deep** (evidence-grounded) claims: where evidence contradicts the draft, correct
+  it confidently and cite the supporting source `[n]`.
+- For **shallow** claims: apply caveats only; do not rewrite based on self-reflection.
+- If external evidence cannot support a claim, **say so honestly** — never fabricate to
+  fill the gap.
+
+**Output:**
 
 ```
 ## Verification Summary
-- Checked: [N] claims
-- Confirmed: [X] | Corrected: [Y] | Uncertain: [Z]
+- Checked: N | Confirmed: X | Corrected: Y | Uncertain: Z
 
 ## Corrections
-- [Original claim] → [Corrected claim] (reason)
+- [original] → [corrected]  (basis: [n])
+
+## Sources
+[1] <url>
+[2] <url>
 
 ## Revised Response
-[Full revised response]
+<final text with inline [n] citations>
 ```
 
-## Variant Selection
+---
 
-Tier-based routing handles per-claim decisions (see "Verification Tiers"). Variant selection is the **overall** intensity:
+## Optional: iterate (default off)
 
-| Variant | When to use | How |
-|---------|------------|-----|
-| **Joint** | Short, trivial (<3 claims, all shallow) | Combine Steps 2-3 into one pass |
-| **Two-step** | Medium complexity, mostly shallow claims | Standard 4-step flow, all in-context |
-| **Factored** | Has ≥1 deep-tier claim | Standard 4-step flow with subagent dispatch for deep claims |
-| **Factored + Revise** | Long-form, high accuracy need, many deep claims | Parallel subagent dispatch + explicit cross-check step |
+Single pass is the default. For high-stakes long-form answers you may run one extra
+verify→correct cycle (CRITIC-style): after Phase 3, re-verify only the corrected deep
+claims once, then re-finalize. Cap at one extra iteration to bound latency.
 
-Default to **Two-step**. Automatically upgrade to **Factored** the moment any claim qualifies for `tier: deep`.
+## Cost-awareness
 
-## Cost-Awareness
+- The `needs_verification` gate skips chitchat / common knowledge entirely.
+- Shallow stays closed-book (no search round-trip).
+- For >10 verifiable claims, prioritize the highest-risk deep claims.
 
-CoVe trades latency/tokens for accuracy. To manage cost:
+## Reference implementation
 
-- Skip verification of common knowledge and subjective statements
-- Batch related claims into single verification questions where possible
-- For responses with >10 verifiable claims, prioritize high-risk claims (specific numbers, dates, API syntax, version-specific behavior)
+`cove/reference/` contains a provider-agnostic Python implementation of this pipeline
+(async parallel verification, pluggable `LLMClient` / `SearchProvider`) for embedding
+CoVe 2.0 in your own LLM app. See `cove/reference/README.md`.

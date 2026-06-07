@@ -22,7 +22,7 @@
 |---|---|---|
 | [📚 `kb-wiki`](#-kb-wiki) | LLM 驅動的個人知識庫（Karpathy LLM Wiki pattern） | `/kb-wiki <op>` |
 | [📝 `markitdown`](#-markitdown) | 檔案／URL → Markdown 轉換 | 自然語言 |
-| [✅ `cove`](#-cove) | Chain-of-Verification 自我驗證流程 | `/cove` |
+| [✅ `cove`](#-cove) | Agentic CoVe 2.0：開卷三階段自我驗證 | `/cove` |
 
 ---
 
@@ -155,31 +155,30 @@ npx skills add RayChang/agent-skills@markitdown
 
 ### ✅ `cove`
 
-基於 Meta AI 的 [Chain-of-Verification（CoVe）論文](https://arxiv.org/abs/2309.11495)，透過結構化的四步驟自我驗證流程減少 LLM 的 hallucination。
+基於 Meta AI 的 [Chain-of-Verification（CoVe）](https://arxiv.org/abs/2309.11495) 與 Microsoft 的 [CRITIC](https://arxiv.org/abs/2305.11738)，將原本的**閉卷**自我驗證升級為**開卷（tool-interactive）**的三階段管線——正是 CoVe 論文結論自己提出的延伸方向。
 
 以 `/cove` 手動觸發，對前一個回應（或指定內容）進行驗證與修訂。
 
-#### 🔄 四步驟流程
+#### 🔄 三階段管線
 
-| Step | 動作 | 目的 |
+| Phase | 動作 | 目的 |
 |---|---|---|
-| **1️⃣** | 取得待驗證的初稿 | 建立基準 |
-| **2️⃣** | 規劃驗證問題並標記 tier | 針對關鍵事實、技術陳述、邏輯斷言 |
-| **3️⃣** | 分層驗證 | `deep` 走 subagent（fresh context）、`shallow` 留 in-context |
-| **4️⃣** | 對照結果修訂初稿 | 標示無法驗證的內容 |
-
-> 適合用於事實密集的回答、技術說明、或任何對準確性要求較高的場景。
+| **1️⃣ Draft & Plan** | 草擬回答並輸出 JSON 驗證計畫 | `needs_verification` 閘門短路閒聊／常識 |
+| **2️⃣ Tiered Verify** | `deep` 走開卷平行 search-subagent、`shallow` 走保守閉卷 | 用外部證據接地，消滅閉卷幻覺 |
+| **3️⃣ Critique & Finalize** | 對照證據嚴格審查、重寫並附 citations | 修正內容標明來源，無法佐證就誠實說明 |
 
 #### 🎯 分層驗證（Tier Routing）
 
-並非所有 claim 都值得同等 rigor。每個驗證問題會先分類為 `deep` 或 `shallow`，再決定驗證方式：
-
 | Tier | 驗證方式 | 適用 |
 |---|---|---|
-| **🔬 `deep`** | Dispatch Agent subagent（fresh context，真正隔離） | 具體數字／版本／API、具名引用、法律/醫療/合規、冷門主題、User 會直接採用的結論 |
-| **🪶 `shallow`** | In-context 驗證（軟約束：不參照原稿） | <3 claim、常識、主觀觀點、依賴對話 context |
+| **🔬 `deep`** | 開卷：平行 search-subagent（fresh context，且**看不到原稿**） | 具體數字／版本／API、具名引用、法律醫療合規、冷門主題、User 會直接採用的結論 |
+| **🪶 `shallow`** | 閉卷、保守（只加 caveat、不自信改寫） | 邏輯／推理、依賴對話 context、常識、主觀觀點 |
 
-> 💡 `deep` 路徑接近原論文的 **Factored** 變體——透過 `invoke_agent` (Gemini CLI) 或 `Agent` (Claude Code) 呼叫子代理人，其 fresh context 可防止模型錨定自己的原稿而重複幻覺；`deep` 問題可平行 dispatch 壓低延遲。
+> 💡 `deep` 路徑同時保留 CoVe 的 **Factored 隔離**（驗證者看不到原稿，避免重複幻覺）與 CRITIC 的**開卷查證**（用搜尋證據接地）。`shallow` 之所以保守，是因為 CRITIC 實證「沒有外部回饋的自我修正可能無益甚至更糟」。
+
+#### 🐍 Reference 實作
+
+`cove/reference/` 附一份 provider-agnostic 的 Python 實作（`asyncio` 平行驗證、可插拔 `LLMClient` / `SearchProvider`），供將 CoVe 2.0 嵌入自家 LLM app。詳見 `cove/reference/README.md`。
 
 #### 📥 安裝
 
