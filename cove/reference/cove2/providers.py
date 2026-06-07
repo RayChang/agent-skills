@@ -57,7 +57,7 @@ class AnthropicLLM:
     against current docs via context7 before live use.
     """
 
-    def __init__(self, *, model: str = "claude-opus-4-8", api_key: Optional[str] = None, client=None):
+    def __init__(self, *, model: str = "claude-opus-4-8", api_key: Optional[str] = None, client=None):  # verify current model IDs via context7 before live use
         self.model = model
         if client is not None:
             self._client = client
