@@ -34,3 +34,59 @@ async def phase1_plan(llm: LLMClient, query: str) -> Plan:
         except ValueError as exc:
             last_error = exc
     raise last_error  # type: ignore[misc]
+
+
+def _format_evidence(evidence: list[SearchResult]) -> str:
+    if not evidence:
+        return "(no results)"
+    return "\n\n".join(
+        f"[{i}] {r.title}\n{r.snippet}\n{r.url}" for i, r in enumerate(evidence, 1)
+    )
+
+
+def parse_verifier_output(text: str) -> tuple[str, str]:
+    """Parse the two-line 'Answer: / Confidence:' verifier reply. Conservative defaults."""
+    answer, confidence = "unable to verify", "Low"
+    for line in text.splitlines():
+        stripped = line.strip()
+        lowered = stripped.lower()
+        if lowered.startswith("answer:"):
+            answer = stripped.split(":", 1)[1].strip()
+        elif lowered.startswith("confidence:"):
+            confidence = stripped.split(":", 1)[1].strip()
+    return answer, confidence
+
+
+async def _verify_deep(claim: Claim, search: SearchProvider, llm: LLMClient) -> ClaimResult:
+    query = claim.verification_query or claim.text
+    evidence = await search.search(query)
+    system = _load_prompt("phase2_deep.md")
+    # C3: the verifier receives only the question + evidence -- never the draft.
+    user = f"Question: {query}\n\nEvidence:\n{_format_evidence(evidence)}"
+    answer, confidence = parse_verifier_output(await llm.complete(system, user))
+    return ClaimResult(
+        claim=claim, answer=answer, confidence=confidence,
+        externally_grounded=True,
+        sources=[r.url for r in evidence], evidence=evidence,
+    )
+
+
+async def _verify_shallow(claim: Claim, llm: LLMClient) -> ClaimResult:
+    # C4: closed-book and conservative -- no search, no draft, caveats only.
+    system = _load_prompt("phase2_shallow.md")
+    answer, confidence = parse_verifier_output(await llm.complete(system, f"Claim: {claim.text}"))
+    return ClaimResult(
+        claim=claim, answer=answer, confidence=confidence,
+        externally_grounded=False, sources=[], evidence=[],
+    )
+
+
+async def phase2_verify(plan: Plan, search: SearchProvider, llm: LLMClient) -> list[ClaimResult]:
+    """Phase 2: route by tier. Deep claims verify open-book in parallel; shallow stay closed-book."""
+    if not plan.needs_verification:
+        return []
+    deep = [c for c in plan.claims if c.tier == "deep"]
+    shallow = [c for c in plan.claims if c.tier != "deep"]
+    deep_results = await asyncio.gather(*(_verify_deep(c, search, llm) for c in deep))
+    shallow_results = await asyncio.gather(*(_verify_shallow(c, llm) for c in shallow))
+    return list(deep_results) + list(shallow_results)
