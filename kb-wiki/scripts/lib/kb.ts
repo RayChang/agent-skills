@@ -6,11 +6,12 @@ import { config } from "./config"
 
 /**
  * Read all wiki pages and return as { path, relativePath, content } objects.
- * Skips summaries/ directory.
+ * Skips summaries/ by default — pass { includeSummaries: true } to include it
+ * (needed for source-coverage checks and the index's Sources section).
  */
-export async function readAllWikiPages(): Promise<
-  Array<{ path: string; relativePath: string; content: string }>
-> {
+export async function readAllWikiPages(
+  opts: { includeSummaries?: boolean } = {},
+): Promise<Array<{ path: string; relativePath: string; content: string }>> {
   const results: Array<{ path: string; relativePath: string; content: string }> = []
 
   async function walk(dir: string) {
@@ -23,7 +24,7 @@ export async function readAllWikiPages(): Promise<
     for (const name of names) {
       const fullPath = resolve(dir, name)
       const s = await stat(fullPath)
-      if (s.isDirectory() && name !== "summaries") {
+      if (s.isDirectory() && (name !== "summaries" || opts.includeSummaries)) {
         await walk(fullPath)
       } else if (s.isFile() && name.endsWith(".md")) {
         results.push({
@@ -36,6 +37,36 @@ export async function readAllWikiPages(): Promise<
   }
 
   await walk(config.kb.wiki)
+  return results
+}
+
+/**
+ * List source files in kb/raw/sources/ (any extension, recursive).
+ * Returns paths relative to kb/raw/sources/.
+ */
+export async function listRawSourceFiles(): Promise<string[]> {
+  const results: string[] = []
+
+  async function walk(dir: string) {
+    let names: string[]
+    try {
+      names = await readdir(dir)
+    } catch {
+      return
+    }
+    for (const name of names) {
+      if (name.startsWith(".")) continue
+      const fullPath = resolve(dir, name)
+      const s = await stat(fullPath)
+      if (s.isDirectory()) {
+        await walk(fullPath)
+      } else if (s.isFile()) {
+        results.push(relative(config.kb.rawSources, fullPath))
+      }
+    }
+  }
+
+  await walk(config.kb.rawSources)
   return results
 }
 
@@ -58,10 +89,11 @@ export async function appendLog(
   const logFile = Bun.file(config.kb.log)
   const existing = await logFile.text()
 
-  // Insert after the header section (after the second ---)
+  // Insert right below the header separator (first ---) — newest entries at top.
+  // (The init template has exactly one --- ; searching for a second one used to
+  //  silently append entries to the bottom of the file.)
   const firstSep = existing.indexOf("---\n")
-  const secondSep = firstSep !== -1 ? existing.indexOf("---\n", firstSep + 1) : -1
-  const insertPoint = secondSep !== -1 ? secondSep + 4 : existing.length
+  const insertPoint = firstSep !== -1 ? firstSep + 4 : existing.length
 
   const updated = existing.slice(0, insertPoint) + entry + existing.slice(insertPoint)
   await Bun.write(config.kb.log, updated)

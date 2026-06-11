@@ -10,6 +10,7 @@ export const config = {
     wiki: resolve(ROOT, "kb/wiki"),
     index: resolve(ROOT, "kb/wiki/index.md"),
     log: resolve(ROOT, "kb/wiki/log.md"),
+    rawSources: resolve(ROOT, "kb/raw/sources"),
   },
   ai: {
     model: process.env.KB_MODEL ?? "claude-sonnet-4-6",

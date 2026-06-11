@@ -14,7 +14,8 @@ kb/
 ├── wiki/
 │   ├── index.md    # Content catalog (update after every wiki change)
 │   ├── log.md      # Chronological activity log (append-only)
-│   ├── overview.md # High-level project synthesis
+│   ├── overview.md # High-level project synthesis — updated by Ingest when the big picture shifts
+│   ├── summaries/  # One brief page per ingested source — ingest ledger + retrieval backbone
 │   └── {categories}/   # Project-specific — defined at init time
 └── schema.md       # This file
 ```
@@ -70,10 +71,12 @@ Use `→ raw/sources/filename.md` to cite raw sources.
 
 When a new source is added to `raw/sources/`:
 
-1. Read the source document fully
-2. Create or update relevant wiki pages (may touch multiple pages)
-3. Update `wiki/index.md` with new/changed pages
-4. Append entry to `wiki/log.md`
+1. Read the source document fully (convert non-markdown sources to a new markdown file first; never alter the original)
+2. Create or update relevant wiki pages (may touch multiple pages). A concept mentioned only in passing stays in the summary's Key Terms until a second source touches it
+3. Write a brief per-source summary in `wiki/summaries/` (frontmatter: `source`, optional `origin`, `ingested`, `tags`; 3–6 takeaway bullets; Key Terms; pages touched)
+4. Update `wiki/overview.md` if the source shifts the big picture
+5. Update `wiki/index.md` with new/changed pages and the new summary in the Sources section
+6. Append entry to `wiki/log.md`
 
 ### Query
 
@@ -81,8 +84,9 @@ When answering questions against the KB:
 
 1. Read `wiki/index.md` to find relevant pages
 2. Read relevant wiki pages
-3. Synthesize answer with citations
-4. File substantial answers back into the wiki as new or enriched pages
+3. Synthesize answer with citations — prose, comparison table, or report page as the question demands
+4. Separate sourced claims (cited) from own inference (labeled); keep open questions open
+5. File substantial answers back into the wiki as new or enriched pages
 
 ### Lint
 
@@ -90,15 +94,17 @@ Periodic health checks:
 
 - Find broken `[[wiki-links]]`
 - Find orphan pages (no inbound links)
+- Find raw sources with no `summaries/` page (un-ingested)
 - Find concepts mentioned but lacking their own page
 - Find contradictions or stale information
+- Suggest follow-up questions and gaps a web search could fill
 
 ### Map
 
 Rebuild navigation structure:
 
-- Rebuild `wiki/index.md` with accurate one-line summaries
-- Regenerate `{category}/_moc.md` files
+- Rebuild `wiki/index.md` with accurate one-line summaries (categories + Sources section)
+- Regenerate `{category}/_moc.md` files (summaries get no MOC)
 - Add missing cross-links between related pages
 
 ### Verify
@@ -132,4 +138,4 @@ Each entry: `- [[category/page-name]] — one-line summary`
 - Pages created/updated: [[page1]], [[page2]]
 ```
 
-Actions: `ingest`, `query`, `lint`, `map`, `verify`, `capture`, `update`, `restructure`
+Actions: `ingest`, `query`, `lint`, `map`, `verify`, `capture`, `update`, `restructure`, `migrate`

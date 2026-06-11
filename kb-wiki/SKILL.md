@@ -1,11 +1,13 @@
 ---
 name: kb-wiki
-description: This skill should be used when working with a project knowledge base that follows the Karpathy LLM Wiki pattern. It provides workflows for ingesting source documents, querying the KB, running health checks (lint), verifying the wiki against the actual codebase (drift audit), capturing design decisions and lessons learned, and initializing a new KB in a project. Trigger when the user mentions the KB, asks to ingest a source, run a query against the wiki, check whether the KB has drifted from the code, capture learnings, or set up a knowledge base.
+description: This skill should be used when working with a project knowledge base that follows the Karpathy LLM Wiki pattern. It provides workflows for ingesting source documents, querying the KB, running health checks (lint), verifying the wiki against the actual codebase (drift audit), capturing design decisions and lessons learned, initializing a new KB in a project, and migrating an older KB to the current schema. Trigger when the user mentions the KB, asks to ingest a source, run a query against the wiki, check whether the KB has drifted from the code, capture learnings, set up a knowledge base, or upgrade/migrate an existing KB.
 ---
 
 # KB Wiki Skill
 
-A methodology for LLM-maintained knowledge bases based on Andrej Karpathy's LLM Wiki pattern. LLMs maintain the wiki; humans curate sources and ask questions.
+A methodology for LLM-maintained knowledge bases based on Andrej Karpathy's LLM Wiki pattern ([idea file](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) and the companion ["LLM Knowledge Bases" X post](https://x.com/karpathy/status/2039805659525644595)). LLMs maintain the wiki; humans curate sources and ask questions.
+
+The wiki is a **persistent, compounding artifact** — each source is compiled once into interlinked pages and kept current, instead of being re-retrieved and re-synthesized on every question (the RAG failure mode). The index plus brief per-source summaries are the retrieval backbone that makes direct LLM reads sufficient at ~100-page scale.
 
 **Schema reference**: Load `references/schema.md` for page format, link conventions, directory structure, and log format details.
 
@@ -15,7 +17,7 @@ A methodology for LLM-maintained knowledge bases based on Andrej Karpathy's LLM 
 
 ## Guard: check KB exists before any operation
 
-Before running Ingest, Query, Lint, Map, Verify, or Capture — check whether `kb/wiki/index.md` exists. If it does not, stop and tell the user:
+Before running Ingest, Query, Lint, Map, Verify, Capture, or Migrate — check whether `kb/wiki/index.md` exists. If it does not, stop and tell the user:
 
 > "這個專案還沒有 KB。先執行 `/kb-wiki init` 初始化。"
 
@@ -37,9 +39,9 @@ To initialize a KB when a project has none:
    Wait for confirmation. Adjust if the user requests changes; proceed with proposed categories if they say nothing.
 2. Use the Bash tool to create the directory structure:
    ```bash
-   mkdir -p kb/raw/sources kb/raw/assets kb/wiki/{category1} kb/wiki/{category2} ...
+   mkdir -p kb/raw/sources kb/raw/assets kb/wiki/summaries kb/wiki/{category1} kb/wiki/{category2} ...
    ```
-   Expand the confirmed category list into the command before running.
+   Expand the confirmed category list into the command before running. `summaries/` is not a category — it holds per-source summaries written during Ingest.
 3. Copy `assets/schema.md` from this skill to `kb/schema.md`. Replace:
    - `{{PROJECT_NAME}}` → actual project name
    - The category list in the Architecture section → the confirmed categories
@@ -61,7 +63,24 @@ To initialize a KB when a project has none:
 
    ---
    ```
-6. Register the KB in the project's agent config so any LLM entering the project auto-discovers it:
+6. Create `kb/wiki/overview.md` — a stub for the high-level synthesis (referenced by the schema; Ingest keeps it current):
+   ```markdown
+   ---
+   title: Overview
+   category: root
+   tags: [overview, synthesis]
+   status: seedling
+   created: YYYY-MM-DD
+   updated: YYYY-MM-DD
+   ---
+
+   # {Project} — Overview
+
+   > High-level synthesis of the KB. Updated during Ingest when a new source shifts the big picture.
+
+   No synthesis yet — populated as sources are ingested.
+   ```
+7. Register the KB in the project's agent config so any LLM entering the project auto-discovers it:
    - Identify the primary agent config file in the project root: `GEMINI.md` (for Gemini CLI), `CLAUDE.md` (for Claude Code), or `AGENTS.md`.
    - If none exist, create the standard one for the current platform (e.g., `GEMINI.md` if running in Gemini CLI, `CLAUDE.md` for Claude Code).
    - Append the section below to the target file — **skip if it already contains a `## Knowledge Base` heading** (idempotent):
@@ -71,7 +90,7 @@ To initialize a KB when a project has none:
 
      This project maintains a knowledge base under `kb/`. Conventions, page format, and workflows (ingest / query / lint / map / capture) are defined in `kb/schema.md`. Read it before any KB operation.
      ```
-7. Tell the user: KB initialized with categories: {list}. Schema registered in {Target Config File}. Drop source documents into `kb/raw/sources/` and run `/kb-wiki ingest`.
+8. Tell the user: KB initialized with categories: {list}. Schema registered in {Target Config File}. Drop source documents into `kb/raw/sources/` and run `/kb-wiki ingest`.
 
 ---
 
@@ -79,13 +98,17 @@ To initialize a KB when a project has none:
 
 To ingest a source from `kb/raw/sources/`:
 
-1. Read `kb/wiki/index.md` to understand existing wiki content and discover what categories exist
-2. Read the source document fully
-3. Identify which existing wiki pages it relates to, and what new pages are needed
-4. **Duplicate check**: before creating a new page, scan existing page titles and tags for near-matches (aliases, alternate spellings, abbreviations). If a concept already has a page under a different name, update the existing page instead of creating a duplicate. When in doubt, ask the user.
-5. Create new pages and/or update existing pages — a single source can touch multiple pages. New pages default to `status: seedling`.
-5. Update `kb/wiki/index.md`: add new pages, update one-line summaries if changed
-6. Append to `kb/wiki/log.md`:
+1. Read `kb/wiki/index.md` to understand existing wiki content and discover what categories exist. Compare `kb/raw/sources/` against `summaries/` to see which sources are still pending — this drives the pacing rule below
+2. If the source is not markdown (PDF, EPUB, DOCX, …), convert it to markdown first (e.g. with the markitdown skill) and save the conversion as a **new** file alongside the original in `kb/raw/sources/` — never alter the original
+3. Read the source document fully
+4. Identify which existing wiki pages it relates to, and what new pages are needed
+5. **Duplicate check**: before creating a new page, scan existing page titles and tags for near-matches (aliases, alternate spellings, abbreviations). If a concept already has a page under a different name, update the existing page instead of creating a duplicate. When in doubt, ask the user.
+6. **Concept threshold**: a concept this source mentions only in passing does not get a standalone page yet — record it in the source summary's Key Terms (step 8) or the closest related page, and promote it to its own page once a second source or query touches it. Concepts central to the project are exempt: create them immediately.
+7. Create new pages and/or update existing pages — a single source can touch multiple pages. New pages default to `status: seedling`.
+8. **Write a per-source summary** at `kb/wiki/summaries/{source-slug}.md` — the ingest ledger and retrieval backbone. Keep it brief: frontmatter (`source`, optional `origin: external | self`, `ingested` date, `tags`), 3–6 key-takeaway bullets, Key Terms, and links to every page touched. Format in `references/schema.md`.
+9. Update `kb/wiki/overview.md` only if the new source shifts the big picture (new thesis, changed architecture, overturned assumption) — not for routine additions
+10. Update `kb/wiki/index.md`: add new pages, update one-line summaries if changed, and list the new summary in the Sources section (create the section on first ingest — format in `references/schema.md`)
+11. Append to `kb/wiki/log.md`:
    ```
    ## [YYYY-MM-DD] ingest | Processed N source(s)
    - Sources: filename(s)
@@ -94,7 +117,9 @@ To ingest a source from `kb/raw/sources/`:
    - Key findings: (1) finding one; (2) finding two
    ```
 
-**Never modify files under `kb/raw/`.**
+**Pacing**: default to ingesting one source at a time and report key findings as you go — the human stays in the loop. If more than ~10 sources are pending, say so and process them in batches of 5–10.
+
+**Never modify or delete existing files under `kb/raw/` — the only allowed addition is the markdown conversion from step 2.**
 
 ---
 
@@ -104,9 +129,10 @@ To answer a question using KB content:
 
 1. Read `kb/wiki/index.md` to identify relevant pages
 2. Read the relevant wiki pages
-3. Synthesize the answer with page citations (e.g. `→ [[patterns/error-triage]]`)
-4. **File substantial answers back into the wiki** — create a new page or enrich an existing one. Queries should compound the KB, not disappear into chat history. Only skip filing if the answer is trivial or entirely covered by existing pages.
-5. Append to `kb/wiki/log.md`:
+3. Synthesize the answer with page citations (e.g. `→ [[patterns/error-triage]]`). Match the output form to the question — prose for simple answers, a comparison table for trade-off questions, a standalone report page for deep analyses
+4. **Separate fact from inference**: claims backed by wiki pages or raw sources carry citations; your own inference is labeled explicitly (e.g. 「推論」). Open questions stay marked open — never silently resolve uncertainty when filing back
+5. **File substantial answers back into the wiki** — create a new page or enrich an existing one. Queries should compound the KB, not disappear into chat history. Only skip filing if the answer is trivial or entirely covered by existing pages.
+6. Append to `kb/wiki/log.md`:
    ```
    ## [YYYY-MM-DD] query | {question summary}
    - Pages consulted: [[page1]], [[page2]]
@@ -125,16 +151,21 @@ bun ~/.claude/skills/kb-wiki/scripts/lint.ts --deep    # + LLM content analysis
 
 If Bun is unavailable (command not found), fall back to doing it manually:
 
-1. Read all pages in `kb/wiki/`
+1. Read all pages in `kb/wiki/` and list the files in `kb/raw/sources/`
 2. Check for:
-   - **Broken links**: `[[page]]` references that don't have a corresponding file
+   - **Broken links**: `[[page]]` references that don't have a corresponding file — skip links inside `log.md` (append-only history; they legitimately rot when pages are renamed)
    - **Orphan pages**: pages with no inbound links from other pages
+   - **Missing frontmatter**: content pages lacking YAML frontmatter or its required fields (`title`, `category`, `tags`) — `summaries/` pages use their own frontmatter and are exempt
+   - **Empty categories**: category directories with no pages
+   - **Un-ingested sources**: files in `kb/raw/sources/` with no corresponding `summaries/` page and no page citing them — the KB is silently lagging its sources
+   - **Missing summaries**: sources that pages do cite but that have no `summaries/` page — the ledger is incomplete (typically a pre-migration KB; backfill via Migrate)
    - **Contradictions**: conflicting claims across pages
    - **Missing pages**: concepts frequently mentioned but without a dedicated page
    - **Stale content**: information likely superseded by newer sources
    - **New article candidates**: interesting connections between existing pages that warrant a synthesis page
-   - **Source gaps**: topics in the wiki that lack a raw source — suggest new documents to ingest
-3. Report findings grouped by severity (error / warning / info)
+   - **Source gaps**: topics in the wiki that lack a raw source — suggest new documents to ingest, and note gaps a quick web search could fill
+   - **Next questions**: 2–3 follow-up questions worth investigating — the wiki's growth direction
+3. Report findings grouped by severity (error / warning / info). If a previous lint report exists, note the trend: issues new since last time vs resolved
 4. Fix broken links and orphan pages immediately; flag contradictions and stale content for human review
 5. Append to `kb/wiki/log.md`:
    ```
@@ -216,10 +247,13 @@ If Bun is unavailable (command not found), fall back to doing it manually:
 
    ...
 
+   ## Sources (N)
+   - [[summaries/source-slug]] — one-line takeaway
+
    ---
    **Total: N pages**
    ```
-   Sort pages alphabetically within each category. Write accurate one-line summaries by reading each page — do not copy old summaries blindly.
+   Sort pages alphabetically within each category. Write accurate one-line summaries by reading each page — do not copy old summaries blindly. Summaries appear only in the Sources section — they get no MOC and do not count toward the page total.
 4. For each category, create/update `kb/wiki/{category}/_moc.md`:
    ```markdown
    # {Category} — Map of Content
@@ -257,10 +291,34 @@ To capture learnings at the end of a significant implementation block:
 
 ---
 
+### Migrate — Upgrade an existing KB to the current schema
+
+For KBs created by an older version of this skill. Symptoms: no `wiki/summaries/`, no `overview.md`, or a `kb/schema.md` that lacks operations defined here. Until the project's `kb/schema.md` is updated, the **old schema governs that project** (the agent-config registration says "read it before any KB operation") — which is why schema comes first:
+
+1. **Inventory the gap**: read `kb/schema.md`, `kb/wiki/index.md`, and recent `log.md` entries; diff `kb/raw/sources/` against `summaries/`. Report what the KB is missing relative to the current schema
+2. **Update `kb/schema.md` — with human approval**: the schema is human-owned. State what the new template adds and **which project-specific customizations you will preserve verbatim** (category list with its annotations, hand-added convention sections, naming rules), then rebuild from `assets/schema.md` with those preserved. The user asking to migrate counts as approval; still report what you kept
+3. **Check agent-config registration**: the project's primary agent config (`AGENTS.md` / `CLAUDE.md` / `GEMINI.md`) must contain the `## Knowledge Base` section from Init step 7 pointing at `kb/schema.md` — older inits and hand-rolled KBs often lack it, leaving agents aware the KB exists but blind to its operating manual. Append it if missing (idempotent)
+4. Create `kb/wiki/summaries/` if missing
+5. Create `kb/wiki/overview.md` if missing — for a KB with existing content, write a real synthesis from the index and key pages (status `developing`), not the init stub
+6. **Backfill the summaries ledger**: worklist = files in `kb/raw/sources/` with no `summaries/` page (directory diff — do not rely on Lint's un-ingested check alone; it misses sources that pages already cite). For each: re-read the **raw source itself**, not the wiki pages derived from it — backfilling from derived pages bakes their drift into the ledger. Recover `ingested` dates from log.md ingest entries; otherwise use today and add `backfilled: true`. Follow the Ingest pacing rule: one at a time, batching 5–10 only when more than ~10 are missing
+7. Update `index.md`: add overview (and the Sources section once summaries exist)
+8. **Do not rewrite existing content pages** — migration adds structure around them. Legacy pages gain `status:` and other new frontmatter on their next regular touch, not in bulk
+9. Run Lint to verify; fix what it reports
+10. Append to `kb/wiki/log.md`:
+   ```
+   ## [YYYY-MM-DD] migrate | Upgraded KB to current schema
+   - Schema: rebuilt from template vX; preserved: {customizations}
+   - Created: summaries/ (N backfilled), overview.md
+   - Lint after: N errors, N warnings
+   ```
+
+---
+
 ## Invariants
 
-- **Never write to `kb/raw/`** — it is immutable source material
+- **Never modify or delete anything under `kb/raw/`** — it is immutable source material. The one allowed addition: saving a markdown conversion of a non-markdown source as a new file next to the original
 - **Always update `index.md` and `log.md`** after any wiki change
+- **Per-source summaries are the ingest ledger** — every ingested source gets a brief `summaries/` page; Lint flags raw files that no summary or page references
 - **Link liberally** — cross-references between pages are what give the wiki its value
 - **Keep index.md summaries accurate and specific** — at ~100 pages / hundreds of thousands of words, a well-maintained index is what makes direct LLM reads sufficient; RAG is not needed at this scale. As the wiki grows beyond this, introduce search tools (e.g. qmd) as a scaling complement — not a replacement for the index.
 - **File outputs back** — query answers are wiki contributions, not disposable chat responses

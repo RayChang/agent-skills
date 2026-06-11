@@ -10,7 +10,8 @@ kb/
 ├── wiki/
 │   ├── index.md    # Content catalog — update after every wiki change
 │   ├── log.md      # Append-only chronological activity log
-│   ├── overview.md # High-level project synthesis
+│   ├── overview.md # High-level project synthesis — created at init, updated by Ingest
+│   ├── summaries/  # One brief page per ingested source — ingest ledger + retrieval backbone
 │   ├── concepts/
 │   ├── integrations/
 │   ├── competitors/
@@ -45,6 +46,33 @@ Use `→ raw/sources/filename.md` to cite raw sources inline.
 - [[category/related-page]]
 ```
 
+## Summary Page Format (wiki/summaries/)
+
+One per ingested source, written during Ingest. Brief by design — takeaways and pointers, not a rewrite of the source:
+
+```markdown
+---
+source: filename in raw/sources, or URL
+origin: external | self        # optional — third-party material vs own design notes/decisions
+ingested: YYYY-MM-DD
+backfilled: true               # optional — summary written during Migrate, not at original ingest time
+tags: [tag1, tag2]
+---
+
+# {Source Title} — Summary
+
+- Key takeaway one
+- Key takeaway two (3–6 bullets total)
+
+## Key Terms
+- term — one-line definition (gets its own page once a second source or query touches it)
+
+## Pages Touched
+- [[category/page-1]], [[category/page-2]]
+```
+
+Summaries are excluded from MOCs and category listings; they appear in the index's Sources section. When a source's `origin: self` experience contradicts an external source's claim, record both sides as a tension — do not merge them into one narrative.
+
 ## Wiki Link Convention
 
 - Cross-reference format: `[[category/page-name]]`
@@ -60,6 +88,9 @@ Use `→ raw/sources/filename.md` to cite raw sources inline.
 
 ## Category Name (N)
 - [[category/page-name]] — one-line summary of page content
+
+## Sources (N)
+- [[summaries/source-slug]] — one-line takeaway
 
 ---
 **Total: N pages**
@@ -80,7 +111,9 @@ Use `→ raw/sources/filename.md` to cite raw sources inline.
 - Pages updated: [[page2]]
 ```
 
-Valid actions: `ingest`, `query`, `lint`, `map`, `verify`, `update`, `restructure`, `capture`
+Valid actions: `ingest`, `query`, `lint`, `map`, `verify`, `update`, `restructure`, `capture`, `migrate`
+
+The consistent `## [YYYY-MM-DD] action |` prefix keeps the log parseable with plain unix tools — e.g. `grep "^## \[" kb/wiki/log.md | head -5` lists the most recent activity.
 
 ## Page Status
 
