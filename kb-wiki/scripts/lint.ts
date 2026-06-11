@@ -12,7 +12,7 @@
 import { resolve } from "path"
 import { config, discoverCategories } from "./lib/config"
 import { ask } from "./lib/ai"
-import { readAllWikiPages, appendLog, todayDate } from "./lib/kb"
+import { readAllWikiPages, listRawSourceFiles, appendLog, todayDate } from "./lib/kb"
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -163,6 +163,34 @@ async function checkEmptyCategories(
   return issues
 }
 
+function checkUningestedSources(
+  pages: Array<{ relativePath: string; content: string }>,
+  rawFiles: string[],
+): LintIssue[] {
+  const issues: LintIssue[] = []
+  // Exclude lint reports — they quote un-ingested filenames and would mask the check on re-runs
+  const corpus = pages
+    .filter((p) => !p.relativePath.match(/^lint-report-/))
+    .map((p) => p.content)
+    .join("\n")
+
+  for (const file of rawFiles) {
+    const base = file.split("/").pop() ?? file
+    const stem = base.replace(/\.[^.]+$/, "")
+    // Ingested = some wiki page (usually a summaries/ page) references the file by name
+    if (!corpus.includes(base) && !corpus.includes(stem)) {
+      issues.push({
+        severity: "warning",
+        category: "un-ingested",
+        message: `Raw source never ingested — no wiki page references it`,
+        file: `raw/sources/${file}`,
+      })
+    }
+  }
+
+  return issues
+}
+
 // ─── LLM Deep Analysis ───────────────────────────────────
 
 const LINT_SYSTEM = `You are a knowledge base quality auditor. Analyze wiki content for inconsistencies, contradictions, gaps, and staleness. Be specific — cite exact pages and claims.`
@@ -266,14 +294,17 @@ async function main() {
 
   console.log(`KB Lint — ${deep ? "deep analysis (with LLM)" : "structural checks"}...\n`)
 
-  const pages = await readAllWikiPages()
-  console.log(`Scanning ${pages.length} wiki pages...\n`)
+  // Include summaries/ so [[summaries/...]] links resolve and source coverage can be checked
+  const pages = await readAllWikiPages({ includeSummaries: true })
+  const rawFiles = await listRawSourceFiles()
+  console.log(`Scanning ${pages.length} wiki pages, ${rawFiles.length} raw sources...\n`)
 
   const allIssues: LintIssue[] = [
     ...(await checkBrokenLinks(pages)),
     ...checkOrphanPages(pages),
     ...checkMissingFrontmatter(pages),
     ...(await checkEmptyCategories(pages)),
+    ...checkUningestedSources(pages, rawFiles),
   ]
 
   let totalTokens = 0

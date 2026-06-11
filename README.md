@@ -85,9 +85,9 @@ Skills 可透過兩種方式觸發：
 | 操作 | 說明 |
 |---|---|
 | `init` | 初始化 KB，建立目錄結構與 schema |
-| `ingest` | 處理新的來源文件，更新 wiki 頁面 |
-| `query` | 以 wiki 內容回答問題，答案歸檔回 wiki |
-| `lint` | 健康檢查：斷鏈、孤立頁面、矛盾內容 |
+| `ingest` | 處理新的來源文件：更新 wiki 頁面 + 寫入逐源摘要（`summaries/`，ingest 帳本） |
+| `query` | 以 wiki 內容回答問題（事實／推論分開標示），答案歸檔回 wiki |
+| `lint` | 健康檢查：斷鏈、孤立頁面、矛盾內容、未編譯來源（raw 有檔但 wiki 沒收） |
 | `map` | 重建 index、MOC 及交叉連結 |
 | `verify` | 對照實際 codebase 檢查 wiki 是否漂移（drift audit） |
 | `capture` | 在里程碑結束後萃取設計決策與教訓 |
@@ -107,9 +107,9 @@ npx skills add RayChang/agent-skills@kb-wiki
 3. Agent 讀取 `GEMINI.md` / `CLAUDE.md` / `README.md` / `package.json`，提案合適的分類結構讓你確認
 4. 確認後自動建立：
    - 📁 `kb/raw/sources/`、`kb/raw/assets/`（原始素材層，不可變動）
-   - 📁 `kb/wiki/{categories}/`（LLM 維護的 wiki 層）
+   - 📁 `kb/wiki/{categories}/`、`kb/wiki/summaries/`（LLM 維護的 wiki 層；summaries 為逐源摘要）
    - 📄 `kb/schema.md`（本專案的 KB 規則）
-   - 📄 `kb/wiki/index.md`、`kb/wiki/log.md`
+   - 📄 `kb/wiki/index.md`、`kb/wiki/log.md`、`kb/wiki/overview.md`（高層綜述，隨 ingest 更新）
    - 📝 在專案根的 `GEMINI.md` 或 `CLAUDE.md` 附加 `## Knowledge Base` 區塊，讓後續任何 LLM agent 進專案都能自動發現 KB（自動偵測平台適配）
 
 #### 🔄 日常流程
@@ -117,7 +117,7 @@ npx skills add RayChang/agent-skills@kb-wiki
 ```mermaid
 flowchart LR
     A[📥 丟 sources 進<br/>kb/raw/sources/] --> B[🔄 /kb-wiki ingest]
-    B --> C[📚 wiki 自動更新<br/>index + log]
+    B --> C[📚 wiki 自動更新<br/>summaries + index + log]
     C --> D[💬 /kb-wiki query<br/>或直接提問]
     D --> E[📝 答案歸檔回 wiki]
     E --> F[🔧 定期 lint / map / verify<br/>維護健康度與校準]

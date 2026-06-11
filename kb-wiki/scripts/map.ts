@@ -49,16 +49,17 @@ function parsePage(relativePath: string, content: string): PageInfo {
     ? tagsMatch[1].split(",").map((t) => t.trim().replace(/[\[\]"']/g, ""))
     : []
 
-  // First meaningful paragraph as summary
+  // First meaningful paragraph as summary — scan the body only, after frontmatter,
+  // so unanticipated frontmatter keys (source, origin, ingested, …) never leak in
+  const body = fmMatch ? content.slice(fmMatch[0].length) : content
   let summary = ""
-  for (const line of content.split("\n")) {
+  for (const line of body.split("\n")) {
     const trimmed = line.trim()
     if (
       trimmed &&
       !trimmed.startsWith("#") &&
       !trimmed.startsWith(">") &&
       !trimmed.startsWith("---") &&
-      !/^(title|category|tags|sources|created|updated):/.test(trimmed) &&
       trimmed.length > 20
     ) {
       summary = trimmed.slice(0, 150)
@@ -83,6 +84,7 @@ async function buildIndex(pages: PageInfo[]): Promise<string> {
       page.relativePath.startsWith("summaries/") ||
       page.relativePath === "index.md" ||
       page.relativePath === "log.md" ||
+      page.relativePath.endsWith("_moc.md") ||
       page.relativePath.startsWith("lint-report-")
     ) continue
 
@@ -119,6 +121,19 @@ async function buildIndex(pages: PageInfo[]): Promise<string> {
     lines.push(`## ${label} (${catPages.length})`)
     for (const p of catPages.sort((a, b) => a.title.localeCompare(b.title))) {
       lines.push(`- [[${p.slug}]] — ${p.summary || p.title}`)
+    }
+    lines.push("")
+  }
+
+  // Per-source summaries — listed as the ingest ledger, not counted as category pages
+  const sources = pages.filter(
+    (p) => p.relativePath.startsWith("summaries/") && !p.relativePath.endsWith("_moc.md"),
+  )
+  if (sources.length > 0) {
+    lines.push(`## Sources (${sources.length})`)
+    for (const p of sources.sort((a, b) => a.title.localeCompare(b.title))) {
+      const takeaway = (p.summary || p.title).replace(/^[-*]\s*/, "")
+      lines.push(`- [[${p.slug}]] — ${takeaway}`)
     }
     lines.push("")
   }
@@ -254,7 +269,8 @@ async function main() {
 
   console.log(`KB Map — ${deep ? "deep mode (with LLM)" : "structural rebuild"}...\n`)
 
-  const rawPages = await readAllWikiPages()
+  // Include summaries/ so the index's Sources section can be built
+  const rawPages = await readAllWikiPages({ includeSummaries: true })
   const pages = rawPages.map((p) => parsePage(p.relativePath, p.content))
   const categories = await discoverCategories()
   console.log(`Found ${pages.length} wiki pages across categories: ${categories.join(", ")}\n`)
@@ -265,10 +281,12 @@ async function main() {
   await Bun.write(config.kb.index, indexContent + "\n")
   console.log(" done")
 
-  // Generate per-category MOC files
+  // Generate per-category MOC files (a MOC never lists itself or a previous run's MOC)
   let mocCount = 0
   for (const cat of categories) {
-    const catPages = pages.filter((p) => p.category === cat)
+    const catPages = pages.filter(
+      (p) => p.category === cat && !p.relativePath.endsWith("_moc.md"),
+    )
     if (catPages.length === 0) continue
 
     const mocContent = buildMoc(cat, catPages)
@@ -284,10 +302,13 @@ async function main() {
       !p.relativePath.startsWith("summaries/") &&
       p.relativePath !== "index.md" &&
       p.relativePath !== "log.md" &&
+      !p.relativePath.endsWith("_moc.md") &&
       !p.relativePath.startsWith("lint-report-"),
   )
   const totalLinks = contentPages.reduce((sum, p) => sum + p.outboundLinks.length, 0)
   const orphans = contentPages.filter((p) => {
+    // overview.md is a root synthesis page — exempt from orphan stats (matches lint.ts)
+    if (p.relativePath === "overview.md") return false
     return !contentPages.some(
       (other) => other.slug !== p.slug && other.outboundLinks.includes(p.slug),
     )

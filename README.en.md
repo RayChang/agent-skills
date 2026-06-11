@@ -84,9 +84,9 @@ Based on [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/4
 | Operation | Description |
 |---|---|
 | `init` | Initialize the KB, set up directory structure and schema |
-| `ingest` | Process a new source document and update wiki pages |
-| `query` | Answer a question from the wiki; file substantial answers back |
-| `lint` | Health check: broken links, orphan pages, contradictions |
+| `ingest` | Process a new source: update wiki pages + write a per-source summary (`summaries/`, the ingest ledger) |
+| `query` | Answer a question from the wiki (facts cited, inference labeled); file substantial answers back |
+| `lint` | Health check: broken links, orphan pages, contradictions, un-ingested sources |
 | `map` | Rebuild index, MOCs, and cross-links |
 | `verify` | Drift audit: check wiki pages against the actual codebase |
 | `capture` | Extract design decisions and lessons after a milestone |
@@ -106,9 +106,9 @@ npx skills add RayChang/agent-skills@kb-wiki
 3. Claude reads `CLAUDE.md` / `README.md` / `package.json` and proposes a category structure for your confirmation
 4. On confirmation, the following is created automatically:
    - 📁 `kb/raw/sources/`, `kb/raw/assets/` (raw layer — immutable)
-   - 📁 `kb/wiki/{categories}/` (LLM-maintained wiki layer)
+   - 📁 `kb/wiki/{categories}/`, `kb/wiki/summaries/` (LLM-maintained wiki layer; summaries = per-source digests)
    - 📄 `kb/schema.md` (this project's KB conventions)
-   - 📄 `kb/wiki/index.md`, `kb/wiki/log.md`
+   - 📄 `kb/wiki/index.md`, `kb/wiki/log.md`, `kb/wiki/overview.md` (high-level synthesis, kept current by ingest)
    - 📝 A `## Knowledge Base` section is appended to the project's `CLAUDE.md` so any future LLM agent entering the project auto-discovers the KB
 
 #### 🔄 Daily Workflow
@@ -116,7 +116,7 @@ npx skills add RayChang/agent-skills@kb-wiki
 ```mermaid
 flowchart LR
     A[📥 Drop sources into<br/>kb/raw/sources/] --> B[🔄 /kb-wiki ingest]
-    B --> C[📚 Wiki updated<br/>index + log]
+    B --> C[📚 Wiki updated<br/>summaries + index + log]
     C --> D[💬 /kb-wiki query<br/>or just ask]
     D --> E[📝 Answers filed<br/>back to wiki]
     E --> F[🔧 Periodic lint / map / verify<br/>to stay healthy & aligned]
