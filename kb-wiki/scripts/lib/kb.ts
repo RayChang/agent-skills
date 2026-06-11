@@ -89,10 +89,11 @@ export async function appendLog(
   const logFile = Bun.file(config.kb.log)
   const existing = await logFile.text()
 
-  // Insert after the header section (after the second ---)
+  // Insert right below the header separator (first ---) — newest entries at top.
+  // (The init template has exactly one --- ; searching for a second one used to
+  //  silently append entries to the bottom of the file.)
   const firstSep = existing.indexOf("---\n")
-  const secondSep = firstSep !== -1 ? existing.indexOf("---\n", firstSep + 1) : -1
-  const insertPoint = secondSep !== -1 ? secondSep + 4 : existing.length
+  const insertPoint = firstSep !== -1 ? firstSep + 4 : existing.length
 
   const updated = existing.slice(0, insertPoint) + entry + existing.slice(insertPoint)
   await Bun.write(config.kb.log, updated)

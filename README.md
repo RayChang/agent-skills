@@ -91,6 +91,7 @@ Skills 可透過兩種方式觸發：
 | `map` | 重建 index、MOC 及交叉連結 |
 | `verify` | 對照實際 codebase 檢查 wiki 是否漂移（drift audit） |
 | `capture` | 在里程碑結束後萃取設計決策與教訓 |
+| `migrate` | 將舊版 KB 升級到現行 schema（schema 重建保留客製、回填摘要帳本、補 overview） |
 
 > 💡 **`verify` ≠ `lint`**：`lint` 檢查 wiki 的*內部*健康（斷鏈、孤立、矛盾）；`verify` 檢查*外部*校準——頁面是否仍與它描述的程式碼一致。Forward-design（尚未實作的設計）頁面不算漂移，只有頁面宣稱的「現況」才會被檢查；修正後一律以獨立 pass 重新驗證。
 

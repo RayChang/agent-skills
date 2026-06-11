@@ -90,6 +90,7 @@ Based on [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/4
 | `map` | Rebuild index, MOCs, and cross-links |
 | `verify` | Drift audit: check wiki pages against the actual codebase |
 | `capture` | Extract design decisions and lessons after a milestone |
+| `migrate` | Upgrade an older KB to the current schema (rebuild schema preserving customizations, backfill the summaries ledger, add overview) |
 
 > 💡 **`verify` ≠ `lint`**: `lint` checks the wiki's *internal* health (broken links, orphans, contradictions); `verify` checks its *external* alignment — whether pages still match the code they describe. Forward-design pages aren't drift; only the current-state claims they assert can drift. Fixes are always re-verified in an independent pass.
 

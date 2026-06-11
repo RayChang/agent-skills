@@ -138,4 +138,4 @@ Each entry: `- [[category/page-name]] — one-line summary`
 - Pages created/updated: [[page1]], [[page2]]
 ```
 
-Actions: `ingest`, `query`, `lint`, `map`, `verify`, `capture`, `update`, `restructure`
+Actions: `ingest`, `query`, `lint`, `map`, `verify`, `capture`, `update`, `restructure`, `migrate`

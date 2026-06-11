@@ -38,6 +38,8 @@ async function checkBrokenLinks(
 
   for (const page of pages) {
     if (page.relativePath.startsWith("summaries/")) continue
+    // log.md is append-only history — its links legitimately rot when pages are renamed
+    if (page.relativePath === "log.md") continue
 
     const links = extractWikiLinks(page.content)
     for (const link of links) {
@@ -169,20 +171,33 @@ function checkUningestedSources(
 ): LintIssue[] {
   const issues: LintIssue[] = []
   // Exclude lint reports — they quote un-ingested filenames and would mask the check on re-runs
-  const corpus = pages
-    .filter((p) => !p.relativePath.match(/^lint-report-/))
+  const relevant = pages.filter((p) => !p.relativePath.match(/^lint-report-/))
+  const corpus = relevant.map((p) => p.content).join("\n")
+  const ledger = relevant
+    .filter((p) => p.relativePath.startsWith("summaries/"))
     .map((p) => p.content)
     .join("\n")
 
   for (const file of rawFiles) {
     const base = file.split("/").pop() ?? file
     const stem = base.replace(/\.[^.]+$/, "")
+    const referenced = corpus.includes(base) || corpus.includes(stem)
+    const inLedger = ledger.includes(base) || ledger.includes(stem)
+
     // Ingested = some wiki page (usually a summaries/ page) references the file by name
-    if (!corpus.includes(base) && !corpus.includes(stem)) {
+    if (!referenced) {
       issues.push({
         severity: "warning",
         category: "un-ingested",
         message: `Raw source never ingested — no wiki page references it`,
+        file: `raw/sources/${file}`,
+      })
+    } else if (!inLedger) {
+      // Cited by pages but absent from the summaries ledger — pre-migration KBs end up here
+      issues.push({
+        severity: "info",
+        category: "missing-summary",
+        message: `Source is cited by pages but has no summaries/ page — backfill via Migrate`,
         file: `raw/sources/${file}`,
       })
     }

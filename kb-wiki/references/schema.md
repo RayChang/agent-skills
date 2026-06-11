@@ -55,6 +55,7 @@ One per ingested source, written during Ingest. Brief by design — takeaways an
 source: filename in raw/sources, or URL
 origin: external | self        # optional — third-party material vs own design notes/decisions
 ingested: YYYY-MM-DD
+backfilled: true               # optional — summary written during Migrate, not at original ingest time
 tags: [tag1, tag2]
 ---
 
@@ -110,7 +111,7 @@ Summaries are excluded from MOCs and category listings; they appear in the index
 - Pages updated: [[page2]]
 ```
 
-Valid actions: `ingest`, `query`, `lint`, `map`, `verify`, `update`, `restructure`, `capture`
+Valid actions: `ingest`, `query`, `lint`, `map`, `verify`, `update`, `restructure`, `capture`, `migrate`
 
 The consistent `## [YYYY-MM-DD] action |` prefix keeps the log parseable with plain unix tools — e.g. `grep "^## \[" kb/wiki/log.md | head -5` lists the most recent activity.
 

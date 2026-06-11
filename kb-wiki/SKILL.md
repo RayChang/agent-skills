@@ -1,6 +1,6 @@
 ---
 name: kb-wiki
-description: This skill should be used when working with a project knowledge base that follows the Karpathy LLM Wiki pattern. It provides workflows for ingesting source documents, querying the KB, running health checks (lint), verifying the wiki against the actual codebase (drift audit), capturing design decisions and lessons learned, and initializing a new KB in a project. Trigger when the user mentions the KB, asks to ingest a source, run a query against the wiki, check whether the KB has drifted from the code, capture learnings, or set up a knowledge base.
+description: This skill should be used when working with a project knowledge base that follows the Karpathy LLM Wiki pattern. It provides workflows for ingesting source documents, querying the KB, running health checks (lint), verifying the wiki against the actual codebase (drift audit), capturing design decisions and lessons learned, initializing a new KB in a project, and migrating an older KB to the current schema. Trigger when the user mentions the KB, asks to ingest a source, run a query against the wiki, check whether the KB has drifted from the code, capture learnings, set up a knowledge base, or upgrade/migrate an existing KB.
 ---
 
 # KB Wiki Skill
@@ -17,7 +17,7 @@ The wiki is a **persistent, compounding artifact** — each source is compiled o
 
 ## Guard: check KB exists before any operation
 
-Before running Ingest, Query, Lint, Map, Verify, or Capture — check whether `kb/wiki/index.md` exists. If it does not, stop and tell the user:
+Before running Ingest, Query, Lint, Map, Verify, Capture, or Migrate — check whether `kb/wiki/index.md` exists. If it does not, stop and tell the user:
 
 > "這個專案還沒有 KB。先執行 `/kb-wiki init` 初始化。"
 
@@ -153,11 +153,12 @@ If Bun is unavailable (command not found), fall back to doing it manually:
 
 1. Read all pages in `kb/wiki/` and list the files in `kb/raw/sources/`
 2. Check for:
-   - **Broken links**: `[[page]]` references that don't have a corresponding file
+   - **Broken links**: `[[page]]` references that don't have a corresponding file — skip links inside `log.md` (append-only history; they legitimately rot when pages are renamed)
    - **Orphan pages**: pages with no inbound links from other pages
    - **Missing frontmatter**: content pages lacking YAML frontmatter or its required fields (`title`, `category`, `tags`) — `summaries/` pages use their own frontmatter and are exempt
    - **Empty categories**: category directories with no pages
    - **Un-ingested sources**: files in `kb/raw/sources/` with no corresponding `summaries/` page and no page citing them — the KB is silently lagging its sources
+   - **Missing summaries**: sources that pages do cite but that have no `summaries/` page — the ledger is incomplete (typically a pre-migration KB; backfill via Migrate)
    - **Contradictions**: conflicting claims across pages
    - **Missing pages**: concepts frequently mentioned but without a dedicated page
    - **Stale content**: information likely superseded by newer sources
@@ -287,6 +288,29 @@ To capture learnings at the end of a significant implementation block:
 3. Update `kb/wiki/index.md` and append to `kb/wiki/log.md`
 
 **Do not capture**: implementation progress, code already in the codebase, ephemeral state.
+
+---
+
+### Migrate — Upgrade an existing KB to the current schema
+
+For KBs created by an older version of this skill. Symptoms: no `wiki/summaries/`, no `overview.md`, or a `kb/schema.md` that lacks operations defined here. Until the project's `kb/schema.md` is updated, the **old schema governs that project** (the agent-config registration says "read it before any KB operation") — which is why schema comes first:
+
+1. **Inventory the gap**: read `kb/schema.md`, `kb/wiki/index.md`, and recent `log.md` entries; diff `kb/raw/sources/` against `summaries/`. Report what the KB is missing relative to the current schema
+2. **Update `kb/schema.md` — with human approval**: the schema is human-owned. State what the new template adds and **which project-specific customizations you will preserve verbatim** (category list with its annotations, hand-added convention sections, naming rules), then rebuild from `assets/schema.md` with those preserved. The user asking to migrate counts as approval; still report what you kept
+3. **Check agent-config registration**: the project's primary agent config (`AGENTS.md` / `CLAUDE.md` / `GEMINI.md`) must contain the `## Knowledge Base` section from Init step 7 pointing at `kb/schema.md` — older inits and hand-rolled KBs often lack it, leaving agents aware the KB exists but blind to its operating manual. Append it if missing (idempotent)
+4. Create `kb/wiki/summaries/` if missing
+5. Create `kb/wiki/overview.md` if missing — for a KB with existing content, write a real synthesis from the index and key pages (status `developing`), not the init stub
+6. **Backfill the summaries ledger**: worklist = files in `kb/raw/sources/` with no `summaries/` page (directory diff — do not rely on Lint's un-ingested check alone; it misses sources that pages already cite). For each: re-read the **raw source itself**, not the wiki pages derived from it — backfilling from derived pages bakes their drift into the ledger. Recover `ingested` dates from log.md ingest entries; otherwise use today and add `backfilled: true`. Follow the Ingest pacing rule: one at a time, batching 5–10 only when more than ~10 are missing
+7. Update `index.md`: add overview (and the Sources section once summaries exist)
+8. **Do not rewrite existing content pages** — migration adds structure around them. Legacy pages gain `status:` and other new frontmatter on their next regular touch, not in bulk
+9. Run Lint to verify; fix what it reports
+10. Append to `kb/wiki/log.md`:
+   ```
+   ## [YYYY-MM-DD] migrate | Upgraded KB to current schema
+   - Schema: rebuilt from template vX; preserved: {customizations}
+   - Created: summaries/ (N backfilled), overview.md
+   - Lint after: N errors, N warnings
+   ```
 
 ---
 
