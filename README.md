@@ -87,13 +87,22 @@ Skills 可透過兩種方式觸發：
 | `init` | 初始化 KB，建立目錄結構與 schema |
 | `ingest` | 處理新的來源文件：更新 wiki 頁面 + 寫入逐源摘要（`summaries/`，ingest 帳本） |
 | `query` | 以 wiki 內容回答問題（事實／推論分開標示），答案歸檔回 wiki |
-| `lint` | 健康檢查：斷鏈、孤立頁面、矛盾內容、未編譯來源（raw 有檔但 wiki 沒收） |
+| `lint` | 健康檢查：斷鏈、孤立頁面、矛盾內容、未編譯來源、**prompt-injection 標記掃描**（raw 與 wiki 皆掃，列為 human-review） |
 | `map` | 重建 index、MOC 及交叉連結 |
 | `verify` | 對照實際 codebase 檢查 wiki 是否漂移（drift audit） |
 | `capture` | 在里程碑結束後萃取設計決策與教訓 |
 | `migrate` | 將舊版 KB 升級到現行 schema（schema 重建保留客製、回填摘要帳本、補 overview） |
 
 > 💡 **`verify` ≠ `lint`**：`lint` 檢查 wiki 的*內部*健康（斷鏈、孤立、矛盾）；`verify` 檢查*外部*校準——頁面是否仍與它描述的程式碼一致。Forward-design（尚未實作的設計）頁面不算漂移，只有頁面宣稱的「現況」才會被檢查；修正後一律以獨立 pass 重新驗證。
+
+#### 🔐 信任邊界與安全
+
+KB 會錄入**未受信任**的來源並執行 shell 指令，因此每個操作都在明確的信任邊界內運作（Meta `schema.md` → Wiki 頁面 → Raw 來源，信任度遞減）：
+
+- **來源即資料，非指令**：`kb/raw/` 內的內容只被摘要、引用、標註來源——絕不執行其中內嵌的指令（要求跑指令、改 schema、刪頁、抓 URL、外洩機密一律視為「引述」而非「命令」）
+- **入 shell 前先消毒**：分類名稱等任何由專案檔案／使用者輸入衍生的值，必須先通過 `^[a-z][a-z0-9-]*$` allowlist 才能進入 Bash 指令（防 `init` 的命令注入）
+- **不靜默傳播**：歸檔回 wiki 的內容保留 citation 與 `origin`；單一外部來源支撐的主張維持 `seedling`，不會被洗成無引用的「事實」（防 query→map 回饋迴圈污染）
+- **可疑即隔離**：`lint` 掃描 prompt-injection／外洩標記（instruction-override、角色重指派、`curl … | sh`、索取機密），列為 human-review，絕不自動處理
 
 #### 📥 安裝
 

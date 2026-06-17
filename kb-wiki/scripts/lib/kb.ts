@@ -71,6 +71,44 @@ export async function listRawSourceFiles(): Promise<string[]> {
 }
 
 /**
+ * Read text-like raw source files for content scanning (e.g. injection-marker lint).
+ * Only .md/.markdown/.mdx/.txt are read — binary/large formats (PDF, images, …) are
+ * scanned only after Ingest converts them to markdown, which lands here as a new file.
+ * Returns paths relative to kb/raw/sources/.
+ */
+export async function readRawTextSources(): Promise<
+  Array<{ relativePath: string; content: string }>
+> {
+  const TEXT_EXT = /\.(md|markdown|mdx|txt)$/i
+  const results: Array<{ relativePath: string; content: string }> = []
+
+  async function walk(dir: string) {
+    let names: string[]
+    try {
+      names = await readdir(dir)
+    } catch {
+      return
+    }
+    for (const name of names) {
+      if (name.startsWith(".")) continue
+      const fullPath = resolve(dir, name)
+      const s = await stat(fullPath)
+      if (s.isDirectory()) {
+        await walk(fullPath)
+      } else if (s.isFile() && TEXT_EXT.test(name)) {
+        results.push({
+          relativePath: relative(config.kb.rawSources, fullPath),
+          content: await Bun.file(fullPath).text(),
+        })
+      }
+    }
+  }
+
+  await walk(config.kb.rawSources)
+  return results
+}
+
+/**
  * Append an entry to log.md (newest entries at top, below the header separator).
  */
 export async function appendLog(
