@@ -157,9 +157,13 @@ npx skills add RayChang/agent-skills@markitdown
 
 #### ⚙️ 首次使用（setup）
 
-安裝後執行一次 `/markitdown setup`（或告訴 Agent「設定 markitdown」），會在全域設定檔（如 `~/.gemini/GEMINI.md` 或 `~/.claude/CLAUDE.md`）自動追加 `## File & URL Reading` 區塊，讓 Agent 日後收到檔案或 URL 時**優先使用 markitdown 而非 WebFetch/Read**。操作是 idempotent 的——已有區塊就跳過。
+安裝後執行一次 `/markitdown setup`（或告訴 Agent「設定 markitdown」），會在全域設定檔（如 `~/.gemini/GEMINI.md` 或 `~/.claude/CLAUDE.md`）追加 `## File & URL Reading` 區塊，讓 Agent 日後收到檔案或 URL 時**優先使用 markitdown 而非 WebFetch/Read**。寫入**全域**設定前會先出示區塊並徵求確認;區塊以 HTML 註解標記、可隨時刪除;操作 idempotent——已有區塊就跳過。
 
 要寫進專案層級的設定，執行 `/markitdown setup --project`（對象改為該專案的 `GEMINI.md` 或 `CLAUDE.md`）。
+
+#### 🔐 信任邊界與安全
+
+markitdown 會執行外部工具(`uvx`/PyPI、選用容器)並轉換**未受信任**的文件與 URL,SKILL.md 定有信任邊界:**轉換輸出即資料、非指令**(不執行文件內嵌的指令);**不對遠端安裝腳本 pipe-to-shell**(`curl … | sh` 已從錯誤處理移除,改建議透過套件管理器安裝 uv);**批次處理以位置參數傳檔名**(`find -print0 | xargs -0`,杜絕 `; rm -rf ~` 類檔名注入);未知來源文件**優先走 Docker 隔離**;外部程式碼**只信任 Microsoft 官方**套件/映像並可釘選版本。
 
 ---
 
