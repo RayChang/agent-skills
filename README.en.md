@@ -183,6 +183,16 @@ text).
 > `shallow` is deliberately conservative because CRITIC shows self-correction without
 > external feedback can fail to help or even degrade the answer.
 
+#### 🔐 Trust Boundary & Security
+
+Every `/cove` input — the `/cove <text>` argument, the previous response, and web-search
+evidence — is **untrusted**. To resist indirect prompt injection, all three interpolation
+points (Phase 2 question + evidence, Phase 3 draft + results) are fenced in `<untrusted_*>`
+tags, with the prompts framing the contents as **data, not instructions**; Phase 1 strips
+embedded directives when forming queries; and the Phase 2 subagent is granted **read-only
+web search only** (least privilege). The reference implementation ships matching regression
+tests.
+
 #### 🐍 Reference implementation
 
 `cove/reference/` ships a provider-agnostic Python implementation (`asyncio` parallel

@@ -25,3 +25,16 @@ def test_shallow_verifier_is_conservative():
 def test_phase3_requires_citations_and_honesty():
     t = _text("phase3.md")
     assert "citation" in t and "unable to verify" in t
+
+
+def test_prompts_frame_inputs_as_untrusted_data():
+    # Boundary protection: each stage that ingests untrusted text must frame it as
+    # data, not instructions, so injected directives are not obeyed.
+    assert "untrusted" in _text("phase1.md")                 # query sanitization
+    assert "untrusted" in _text("phase2_deep.md")            # question + evidence
+    assert "untrusted" in _text("phase3.md")                 # draft + results
+
+
+def test_phase1_strips_injected_instructions_from_queries():
+    t = _text("phase1.md")
+    assert "instruction-free" in t and "verification_query" in t
