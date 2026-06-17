@@ -62,7 +62,13 @@ async def _verify_deep(claim: Claim, search: SearchProvider, llm: LLMClient) -> 
     evidence = await search.search(query)
     system = _load_prompt("phase2_deep.md")
     # C3: the verifier receives only the question + evidence -- never the draft.
-    user = f"Question: {query}\n\nEvidence:\n{_format_evidence(evidence)}"
+    # Boundary protection: the question is derived from an untrusted draft and the
+    # evidence is untrusted web content, so both are fenced in <untrusted_*> tags that
+    # phase2_deep.md tells the model to treat as data, not instructions.
+    user = (
+        f"<untrusted_question>\n{query}\n</untrusted_question>\n\n"
+        f"<untrusted_evidence>\n{_format_evidence(evidence)}\n</untrusted_evidence>"
+    )
     answer, confidence = parse_verifier_output(await llm.complete(system, user))
     return ClaimResult(
         claim=claim, answer=answer, confidence=confidence,
@@ -115,7 +121,13 @@ def _format_results(results: list[ClaimResult]) -> str:
 async def phase3_finalize(llm: LLMClient, draft: str, results: list[ClaimResult]) -> FinalAnswer:
     """Phase 3: strict review of draft vs. verification results; emit revision + citations."""
     system = _load_prompt("phase3.md")
-    user = f"Original draft:\n{draft}\n\nVerification results:\n{_format_results(results)}"
+    # Boundary protection: the draft may be attacker-supplied and the results embed
+    # untrusted web evidence, so both are fenced in <untrusted_*> tags that phase3.md
+    # tells the reviewer to treat as data, not instructions.
+    user = (
+        f"<untrusted_draft>\n{draft}\n</untrusted_draft>\n\n"
+        f"<untrusted_results>\n{_format_results(results)}\n</untrusted_results>"
+    )
     raw = await llm.complete_json(system, user, PHASE3_JSON_SCHEMA)
     return FinalAnswer(
         summary=raw.get("summary", {}),
