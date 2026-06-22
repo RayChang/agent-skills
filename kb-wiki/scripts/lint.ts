@@ -18,6 +18,7 @@ import {
   readRawTextSources,
   appendLog,
   todayDate,
+  isLogFile,
 } from "./lib/kb"
 
 // ─── Types ────────────────────────────────────────────────
@@ -44,8 +45,8 @@ async function checkBrokenLinks(
 
   for (const page of pages) {
     if (page.relativePath.startsWith("summaries/")) continue
-    // log.md is append-only history — its links legitimately rot when pages are renamed
-    if (page.relativePath === "log.md") continue
+    // log files are append-only history — their links legitimately rot when pages are renamed
+    if (isLogFile(page.relativePath)) continue
 
     const links = extractWikiLinks(page.content)
     for (const link of links) {
@@ -80,7 +81,7 @@ function checkOrphanPages(
     const path = page.relativePath.replace(".md", "")
     if (
       path === "index" ||
-      path === "log" ||
+      isLogFile(page.relativePath) ||
       path === "overview" ||
       page.relativePath.endsWith("_moc.md") ||
       page.relativePath.match(/^lint-report-/) ||
@@ -108,7 +109,7 @@ function checkMissingFrontmatter(
   for (const page of pages) {
     if (
       page.relativePath === "index.md" ||
-      page.relativePath === "log.md" ||
+      isLogFile(page.relativePath) ||
       page.relativePath.endsWith("_moc.md") ||
       page.relativePath.match(/^lint-report-/) ||
       page.relativePath.startsWith("summaries/")
@@ -275,7 +276,7 @@ async function deepAnalysis(
       (p) =>
         !p.relativePath.startsWith("summaries/") &&
         p.relativePath !== "index.md" &&
-        p.relativePath !== "log.md",
+        !isLogFile(p.relativePath),
     )
     .map((p) => {
       const truncated = p.content.length > 2000
