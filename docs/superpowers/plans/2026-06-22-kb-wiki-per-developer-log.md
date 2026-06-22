@@ -562,13 +562,13 @@ In `deepAnalysis`'s `.filter(...)`:
 
 > Do NOT change `checkInjectionMarkers` — it must keep scanning every page including log files (Global Constraints).
 
-- [ ] **Step 6: Verify lint type-checks and runs against a fixture**
+- [ ] **Step 6: Verify lint parses and local imports resolve**
 
 Run:
 ```bash
-bun build --target=bun kb-wiki/scripts/lint.ts > /dev/null && echo "typecheck/parse OK"
+bun build --target=bun --packages external kb-wiki/scripts/lint.ts > /dev/null && echo "parse OK"
 ```
-Expected: `typecheck/parse OK` (no parse/type errors). Full functional verification is in Task 8.
+Expected: `parse OK`. `--packages external` is REQUIRED — the scripts import `@anthropic-ai/sdk` (via `lib/ai.ts`), which is only auto-installed at runtime, so a plain `bun build` fails on valid code with "Could not resolve". This validates parse + local-import resolution and catches a botched edit's syntax errors; it does NOT typecheck TS types. Full functional verification is in Task 8.
 
 - [ ] **Step 7: Commit**
 
@@ -640,13 +640,13 @@ import { readAllWikiPages, appendLog, todayDate, isLogFile } from "./lib/kb"
   )
 ```
 
-- [ ] **Step 6: Verify map type-checks**
+- [ ] **Step 6: Verify map parses and local imports resolve**
 
 Run:
 ```bash
-bun build --target=bun kb-wiki/scripts/map.ts > /dev/null && echo "typecheck/parse OK"
+bun build --target=bun --packages external kb-wiki/scripts/map.ts > /dev/null && echo "parse OK"
 ```
-Expected: `typecheck/parse OK`.
+Expected: `parse OK`. `--packages external` is REQUIRED (same reason as Task 4 Step 6: `@anthropic-ai/sdk` is runtime-auto-installed, so a plain `bun build` fails on valid code). Validates parse + local-import resolution, not TS types. Full functional verification is in Task 8.
 
 - [ ] **Step 7: Commit**
 
