@@ -219,7 +219,7 @@ ${JSON.stringify(pageList, null, 2)}
 
 Rules:
 - Only suggest links where there is a genuine conceptual relationship
-- Do not suggest links to index.md or log.md
+- Do not suggest links to index.md or any log file
 - Max 20 suggestions
 
 Return JSON array only:

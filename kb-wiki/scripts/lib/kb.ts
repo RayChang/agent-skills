@@ -223,7 +223,7 @@ export function formatLogEntry(
   description: string,
   details: string[],
 ): string {
-  const date = new Date().toISOString().split("T")[0]
+  const date = todayDate()
   return [
     "",
     `## [${date}] ${action} | ${description}`,

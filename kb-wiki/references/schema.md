@@ -102,9 +102,9 @@ Each developer appends to their own file `wiki/log/<dev>.md` (`<dev>` =
 `slug(git config user.name)`; `KB_DEV` env overrides). Newest entries at top of each file:
 
 ```markdown
-# Project Wiki — Log
+# Wiki — Log (<dev>)
 
-> Append-only chronological record. Newest entries at top.
+> Append-only. Newest entries at top. One log file per developer.
 
 ---
 

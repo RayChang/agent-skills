@@ -101,7 +101,7 @@ To initialize a KB when a project has none:
 5. Create the `kb/wiki/log/` directory and the initializing developer's log file
    `kb/wiki/log/<dev>.md` (`<dev>` per "Activity log — one file per developer"):
    ```markdown
-   # {Project} Wiki — Log ({dev})
+   # Wiki — Log ({dev})
 
    > Append-only. Newest entries at top. One log file per developer.
 
