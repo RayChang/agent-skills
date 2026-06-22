@@ -2,6 +2,46 @@ import { readdir, stat } from "fs/promises"
 import { resolve, relative } from "path"
 import { config } from "./config"
 
+// ─── Developer identity ───────────────────────────────────
+
+/**
+ * Filename-safe slug for a developer identifier. NOT the Init shell allowlist:
+ * this value only becomes a path component (Bun.write), never a shell argument,
+ * so unicode letters are preserved while path-dangerous characters are removed.
+ */
+export function slugifyDev(raw: string): string {
+  let s = raw.trim().toLowerCase()
+  s = s.replace(/\s+/g, "-")            // whitespace runs → hyphen
+  s = s.replace(/[\/\\]/g, "-")         // path separators → hyphen
+  s = s.replace(/\.{2,}/g, "-")         // collapse ".." (traversal) → hyphen
+  s = s.replace(/[\x00-\x1f\x7f]/g, "") // strip control chars
+  s = s.replace(/^[.\-]+/, "")          // no leading dot/hyphen
+  s = s.replace(/-{2,}/g, "-").replace(/-+$/, "")
+  return s
+}
+
+/**
+ * Resolve the current developer slug for log routing.
+ * Order: KB_DEV env override → git config user.name → "unknown".
+ */
+export function resolveDevSlug(): string {
+  const env = process.env.KB_DEV?.trim()
+  if (env) {
+    const s = slugifyDev(env)
+    if (s) return s
+  }
+  try {
+    const p = Bun.spawnSync(["git", "config", "user.name"]) // array form — no shell
+    if (p.exitCode === 0) {
+      const s = slugifyDev(p.stdout.toString().trim())
+      if (s) return s
+    }
+  } catch {
+    /* git missing / not a repo → fall through */
+  }
+  return "unknown"
+}
+
 // ─── Wiki File Operations ─────────────────────────────────
 
 /**
