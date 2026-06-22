@@ -182,3 +182,68 @@ export async function appendLog(
 export function todayDate(): string {
   return new Date().toISOString().split("T")[0]
 }
+
+// ─── Log routing (pure) ───────────────────────────────────
+
+/** True for the legacy single log file or any per-developer log file. */
+export function isLogFile(relativePath: string): boolean {
+  return relativePath === "log.md" || relativePath.startsWith("log/")
+}
+
+/** Header written when a developer's log file is first created. */
+export function logHeader(dev: string): string {
+  return [
+    `# Wiki — Log (${dev})`,
+    "",
+    "> Append-only. Newest entries at top. One log file per developer.",
+    "",
+    "---",
+    "",
+  ].join("\n")
+}
+
+/** Format a single dated log entry block. */
+export function formatLogEntry(
+  action: string,
+  description: string,
+  details: string[],
+): string {
+  const date = new Date().toISOString().split("T")[0]
+  return [
+    "",
+    `## [${date}] ${action} | ${description}`,
+    ...details.map((d) => `- ${d}`),
+    "",
+  ].join("\n")
+}
+
+/** Insert an entry right below the first `---` separator (newest at top). */
+export function insertNewestAtTop(existing: string, entry: string): string {
+  const firstSep = existing.indexOf("---\n")
+  const insertPoint = firstSep !== -1 ? firstSep + 4 : existing.length
+  return existing.slice(0, insertPoint) + entry + existing.slice(insertPoint)
+}
+
+/**
+ * Decide which log file an entry goes to, given on-disk existence flags.
+ * - new layout (log/ dir present) → log/<dev>.md
+ * - legacy project (only log.md)  → log.md  (compat until Migrate)
+ * - neither                       → adopt new layout (log/<dev>.md)
+ */
+export function pickLogTarget(opts: {
+  logDir: string
+  legacyLog: string
+  dev: string
+  logDirExists: boolean
+  legacyLogExists: boolean
+  devFileExists: boolean
+}): { path: string; isNew: boolean } {
+  const { logDir, legacyLog, dev, logDirExists, legacyLogExists, devFileExists } = opts
+  if (logDirExists) {
+    return { path: resolve(logDir, `${dev}.md`), isNew: !devFileExists }
+  }
+  if (legacyLogExists) {
+    return { path: legacyLog, isNew: false }
+  }
+  return { path: resolve(logDir, `${dev}.md`), isNew: true }
+}
