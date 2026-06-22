@@ -1,4 +1,5 @@
 import { readdir, stat } from "fs/promises"
+import { existsSync } from "fs"
 import { resolve, relative } from "path"
 import { config } from "./config"
 
@@ -149,32 +150,46 @@ export async function readRawTextSources(): Promise<
 }
 
 /**
- * Append an entry to log.md (newest entries at top, below the header separator).
+ * Write a log entry to the correct file, creating it with a header if new.
+ * Pure routing is delegated to pickLogTarget; this wires the filesystem.
+ * Returns the path written.
+ */
+export async function writeLogEntry(opts: {
+  logDir: string
+  legacyLog: string
+  dev: string
+  entry: string
+}): Promise<string> {
+  const { logDir, legacyLog, dev, entry } = opts
+  const logDirExists = existsSync(logDir)
+  const target = pickLogTarget({
+    logDir,
+    legacyLog,
+    dev,
+    logDirExists,
+    legacyLogExists: existsSync(legacyLog),
+    devFileExists: logDirExists && existsSync(resolve(logDir, `${dev}.md`)),
+  })
+  const existing = target.isNew ? logHeader(dev) : await Bun.file(target.path).text()
+  await Bun.write(target.path, insertNewestAtTop(existing, entry))
+  return target.path
+}
+
+/**
+ * Append an activity entry to the current developer's log file.
+ * Routes to kb/wiki/log/<dev>.md (new layout) or kb/wiki/log.md (legacy).
  */
 export async function appendLog(
   action: string,
   description: string,
   details: string[],
 ): Promise<void> {
-  const date = new Date().toISOString().split("T")[0]
-  const entry = [
-    "",
-    `## [${date}] ${action} | ${description}`,
-    ...details.map((d) => `- ${d}`),
-    "",
-  ].join("\n")
-
-  const logFile = Bun.file(config.kb.log)
-  const existing = await logFile.text()
-
-  // Insert right below the header separator (first ---) — newest entries at top.
-  // (The init template has exactly one --- ; searching for a second one used to
-  //  silently append entries to the bottom of the file.)
-  const firstSep = existing.indexOf("---\n")
-  const insertPoint = firstSep !== -1 ? firstSep + 4 : existing.length
-
-  const updated = existing.slice(0, insertPoint) + entry + existing.slice(insertPoint)
-  await Bun.write(config.kb.log, updated)
+  await writeLogEntry({
+    logDir: config.kb.logDir,
+    legacyLog: config.kb.legacyLog,
+    dev: resolveDevSlug(),
+    entry: formatLogEntry(action, description, details),
+  })
 }
 
 // ─── Formatting ───────────────────────────────────────────

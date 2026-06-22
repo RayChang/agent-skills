@@ -9,7 +9,8 @@ export const config = {
   kb: {
     wiki: resolve(ROOT, "kb/wiki"),
     index: resolve(ROOT, "kb/wiki/index.md"),
-    log: resolve(ROOT, "kb/wiki/log.md"),
+    logDir: resolve(ROOT, "kb/wiki/log"),
+    legacyLog: resolve(ROOT, "kb/wiki/log.md"),
     rawSources: resolve(ROOT, "kb/raw/sources"),
   },
   ai: {
@@ -34,7 +35,7 @@ export async function discoverCategories(): Promise<string[]> {
 
   for (const entry of entries) {
     // Skip meta files and known non-category directories
-    if (entry.startsWith(".") || entry === "summaries" || entry === "queries") {
+    if (entry.startsWith(".") || entry === "summaries" || entry === "queries" || entry === "log") {
       continue
     }
     const fullPath = resolve(config.kb.wiki, entry)

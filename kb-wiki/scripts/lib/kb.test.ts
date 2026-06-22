@@ -1,7 +1,9 @@
 import { resolve } from "path"
-import { test, expect } from "bun:test"
+import { test, expect, afterEach } from "bun:test"
+import { mkdir, rm } from "fs/promises"
 import {
   slugifyDev, resolveDevSlug, isLogFile, pickLogTarget, insertNewestAtTop, logHeader, formatLogEntry,
+  writeLogEntry,
 } from "./kb"
 
 test("slugifyDev: spaces and case → kebab", () => {
@@ -79,4 +81,46 @@ test("formatLogEntry: renders dated action heading + bullets", () => {
   const e = formatLogEntry("map", "Rebuilt index", ["Pages indexed: 3"])
   expect(e).toMatch(/## \[\d{4}-\d{2}-\d{2}\] map \| Rebuilt index/)
   expect(e).toContain("- Pages indexed: 3")
+})
+
+const TMP = resolve(import.meta.dir, "__kbtest_tmp__")
+afterEach(async () => { await rm(TMP, { recursive: true, force: true }) })
+
+test("writeLogEntry: new layout creates log/<dev>.md with header", async () => {
+  await mkdir(resolve(TMP, "log"), { recursive: true })
+  const path = await writeLogEntry({
+    logDir: resolve(TMP, "log"),
+    legacyLog: resolve(TMP, "log.md"),
+    dev: "ray-chang",
+    entry: formatLogEntry("ingest", "x", ["y"]),
+  })
+  expect(path).toBe(resolve(TMP, "log", "ray-chang.md"))
+  const text = await Bun.file(path).text()
+  expect(text).toContain("# Wiki — Log (ray-chang)")
+  expect(text).toContain("## [")
+})
+
+test("writeLogEntry: legacy log.md keeps appending to the single file", async () => {
+  await mkdir(TMP, { recursive: true })
+  await Bun.write(resolve(TMP, "log.md"), logHeader("legacy"))
+  const path = await writeLogEntry({
+    logDir: resolve(TMP, "log"),
+    legacyLog: resolve(TMP, "log.md"),
+    dev: "ray-chang",
+    entry: formatLogEntry("query", "z", ["w"]),
+  })
+  expect(path).toBe(resolve(TMP, "log.md"))
+  const text = await Bun.file(path).text()
+  expect(text).toContain("z") // entry landed in the legacy file
+})
+
+test("writeLogEntry: two developers get two separate files (no shared file)", async () => {
+  await mkdir(resolve(TMP, "log"), { recursive: true })
+  const a = await writeLogEntry({ logDir: resolve(TMP, "log"), legacyLog: resolve(TMP, "log.md"),
+    dev: "alice", entry: formatLogEntry("map", "a", ["x"]) })
+  const b = await writeLogEntry({ logDir: resolve(TMP, "log"), legacyLog: resolve(TMP, "log.md"),
+    dev: "bob", entry: formatLogEntry("map", "b", ["y"]) })
+  expect(a).toBe(resolve(TMP, "log", "alice.md"))
+  expect(b).toBe(resolve(TMP, "log", "bob.md"))
+  expect(a).not.toBe(b)
 })
