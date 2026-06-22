@@ -13,7 +13,7 @@ kb/
 │   └── assets/     # Images, diagrams
 ├── wiki/
 │   ├── index.md    # Content catalog (update after every wiki change)
-│   ├── log.md      # Chronological activity log (append-only)
+│   ├── log/        # One append-only log file per developer (log/<dev>.md)
 │   ├── overview.md # High-level project synthesis — updated by Ingest when the big picture shifts
 │   ├── summaries/  # One brief page per ingested source — ingest ledger + retrieval backbone
 │   └── {categories}/   # Project-specific — defined at init time
@@ -148,7 +148,10 @@ Do not capture: implementation progress, code snippets already in the codebase, 
 
 Each entry: `- [[category/page-name]] — one-line summary`
 
-## Log Format (wiki/log.md)
+## Log Format (wiki/log/<dev>.md)
+
+Each developer appends to their own file `wiki/log/<dev>.md` (`<dev>` =
+`slug(git config user.name)`; `KB_DEV` env overrides). Newest entries at top:
 
 ```markdown
 ## [YYYY-MM-DD] action | Description
@@ -156,4 +159,5 @@ Each entry: `- [[category/page-name]] — one-line summary`
 - Pages created/updated: [[page1]], [[page2]]
 ```
 
-Actions: `ingest`, `query`, `lint`, `map`, `verify`, `capture`, `update`, `restructure`, `migrate`
+Actions: `ingest`, `query`, `lint`, `map`, `verify`, `capture`, `update`, `restructure`, `migrate`.
+Migrate freezes a pre-existing single `wiki/log.md` to `wiki/log/_archive.md`.

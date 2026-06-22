@@ -15,7 +15,7 @@
 import { resolve } from "path"
 import { config, discoverCategories } from "./lib/config"
 import { askJson } from "./lib/ai"
-import { readAllWikiPages, appendLog, todayDate } from "./lib/kb"
+import { readAllWikiPages, appendLog, todayDate, isLogFile } from "./lib/kb"
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -83,7 +83,7 @@ async function buildIndex(pages: PageInfo[]): Promise<string> {
     if (
       page.relativePath.startsWith("summaries/") ||
       page.relativePath === "index.md" ||
-      page.relativePath === "log.md" ||
+      isLogFile(page.relativePath) ||
       page.relativePath.endsWith("_moc.md") ||
       page.relativePath.startsWith("lint-report-")
     ) continue
@@ -172,7 +172,7 @@ function buildMoc(category: string, pages: PageInfo[]): string {
       lines.push("", `Tags: ${page.tags.map((t) => `\`${t}\``).join(", ")}`)
     }
     const connections = page.outboundLinks.filter(
-      (l) => !l.startsWith("index") && !l.startsWith("log"),
+      (l) => !l.startsWith("index") && l !== "log" && !l.startsWith("log/"),
     )
     if (connections.length > 0) {
       lines.push("", `Links to: ${connections.map((l) => `[[${l}]]`).join(", ")}`)
@@ -201,7 +201,7 @@ async function discoverMissingLinks(
       (p) =>
         !p.relativePath.startsWith("summaries/") &&
         p.relativePath !== "index.md" &&
-        p.relativePath !== "log.md" &&
+        !isLogFile(p.relativePath) &&
         !p.relativePath.startsWith("lint-report-"),
     )
     .map((p) => ({
@@ -219,7 +219,7 @@ ${JSON.stringify(pageList, null, 2)}
 
 Rules:
 - Only suggest links where there is a genuine conceptual relationship
-- Do not suggest links to index.md or log.md
+- Do not suggest links to index.md or any log file
 - Max 20 suggestions
 
 Return JSON array only:
@@ -305,7 +305,7 @@ async function main() {
     (p) =>
       !p.relativePath.startsWith("summaries/") &&
       p.relativePath !== "index.md" &&
-      p.relativePath !== "log.md" &&
+      !isLogFile(p.relativePath) &&
       !p.relativePath.endsWith("_moc.md") &&
       !p.relativePath.startsWith("lint-report-"),
   )

@@ -9,7 +9,7 @@ kb/
 │   └── assets/     # Images, diagrams
 ├── wiki/
 │   ├── index.md    # Content catalog — update after every wiki change
-│   ├── log.md      # Append-only chronological activity log
+│   ├── log/        # One append-only log file per developer (log/<dev>.md)
 │   ├── overview.md # High-level project synthesis — created at init, updated by Ingest
 │   ├── summaries/  # One brief page per ingested source — ingest ledger + retrieval backbone
 │   ├── concepts/
@@ -96,12 +96,15 @@ Summaries are excluded from MOCs and category listings; they appear in the index
 **Total: N pages**
 ```
 
-## log.md Format
+## log/ Format (one file per developer)
+
+Each developer appends to their own file `wiki/log/<dev>.md` (`<dev>` =
+`slug(git config user.name)`; `KB_DEV` env overrides). Newest entries at top of each file:
 
 ```markdown
-# Project Wiki — Log
+# Wiki — Log (<dev>)
 
-> Append-only chronological record. Newest entries at top.
+> Append-only. Newest entries at top. One log file per developer.
 
 ---
 
@@ -113,7 +116,11 @@ Summaries are excluded from MOCs and category listings; they appear in the index
 
 Valid actions: `ingest`, `query`, `lint`, `map`, `verify`, `update`, `restructure`, `capture`, `migrate`
 
-The consistent `## [YYYY-MM-DD] action |` prefix keeps the log parseable with plain unix tools — e.g. `grep "^## \[" kb/wiki/log.md | head -5` lists the most recent activity.
+Migrate freezes a pre-existing single `wiki/log.md` to `wiki/log/_archive.md`.
+
+The consistent `## [YYYY-MM-DD] action |` prefix keeps logs parseable with plain unix
+tools — e.g. `grep "^## \[" kb/wiki/log/*.md | head -5` lists recent activity across all
+developers.
 
 ## Page Status
 
