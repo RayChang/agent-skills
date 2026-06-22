@@ -1,5 +1,5 @@
 import { resolve } from "path"
-import { test, expect, afterEach } from "bun:test"
+import { test, expect, afterEach, spyOn } from "bun:test"
 import { mkdir, rm } from "fs/promises"
 import {
   slugifyDev, resolveDevSlug, isLogFile, pickLogTarget, insertNewestAtTop, logHeader, formatLogEntry,
@@ -21,21 +21,77 @@ test("slugifyDev: preserves unicode letters", () => {
   expect(slugifyDev("張瑞")).toBe("張瑞")
 })
 
+test("slugifyDev: collapses backslash separators", () => {
+  expect(slugifyDev("a\\b")).toBe("a-b")
+})
+
+// Run fn with process.env[key] set (or deleted), always restoring afterward.
+function withEnv(key: string, value: string | undefined, fn: () => void) {
+  const prev = process.env[key]
+  if (value === undefined) delete process.env[key]
+  else process.env[key] = value
+  try {
+    fn()
+  } finally {
+    if (prev === undefined) delete process.env[key]
+    else process.env[key] = prev
+  }
+}
+
+// Fake a `git config user.name` result; restores the real Bun.spawnSync afterward.
+function withGitName(stdout: string, exitCode: number, fn: () => void) {
+  const spy = spyOn(Bun, "spawnSync").mockReturnValue({
+    exitCode,
+    stdout: Buffer.from(stdout),
+  } as any)
+  try {
+    fn()
+  } finally {
+    spy.mockRestore()
+  }
+}
+
 test("resolveDevSlug: KB_DEV overrides and is slugged", () => {
-  const prev = process.env.KB_DEV
-  process.env.KB_DEV = "Alice Example"
-  expect(resolveDevSlug()).toBe("alice-example")
-  if (prev === undefined) delete process.env.KB_DEV
-  else process.env.KB_DEV = prev
+  withEnv("KB_DEV", "Alice Example", () => {
+    expect(resolveDevSlug()).toBe("alice-example")
+  })
 })
 
 test("resolveDevSlug: empty KB_DEV falls through to git name (non-empty, not unknown)", () => {
-  const prev = process.env.KB_DEV
-  delete process.env.KB_DEV
-  const got = resolveDevSlug()
-  expect(got.length).toBeGreaterThan(0)
-  expect(got).not.toBe("unknown") // git user.name is configured in this repo
-  if (prev !== undefined) process.env.KB_DEV = prev
+  withEnv("KB_DEV", undefined, () => {
+    const got = resolveDevSlug()
+    expect(got.length).toBeGreaterThan(0)
+    expect(got).not.toBe("unknown") // git user.name is configured in this repo
+  })
+})
+
+test("resolveDevSlug: KB_DEV that slugifies to empty falls through to git", () => {
+  withEnv("KB_DEV", "..", () => {
+    withGitName("Git Person", 0, () => {
+      expect(resolveDevSlug()).toBe("git-person")
+    })
+  })
+})
+
+test('resolveDevSlug: "unknown" when git returns an empty name', () => {
+  withEnv("KB_DEV", undefined, () => {
+    withGitName("", 0, () => {
+      expect(resolveDevSlug()).toBe("unknown")
+    })
+  })
+})
+
+test('resolveDevSlug: "unknown" when the git invocation fails', () => {
+  withEnv("KB_DEV", undefined, () => {
+    const spy = spyOn(Bun, "spawnSync").mockImplementation(() => {
+      throw new Error("git not found")
+    })
+    try {
+      expect(resolveDevSlug()).toBe("unknown")
+    } finally {
+      spy.mockRestore()
+    }
+  })
 })
 
 test("isLogFile: matches log.md and log/ files, not lookalikes", () => {
@@ -75,6 +131,12 @@ test("insertNewestAtTop: newest entry goes right below the first --- separator",
   const out = insertNewestAtTop(insertNewestAtTop(header, first), second)
   expect(out.indexOf("second")).toBeLessThan(out.indexOf("first")) // newest first
   expect(out.indexOf("---")).toBeLessThan(out.indexOf("second"))   // below header
+})
+
+test("insertNewestAtTop: appends at end when no --- separator is present", () => {
+  const existing = "plain text with no separator\n"
+  const entry = formatLogEntry("ingest", "x", ["y"])
+  expect(insertNewestAtTop(existing, entry)).toBe(existing + entry)
 })
 
 test("formatLogEntry: renders dated action heading + bullets", () => {
@@ -123,4 +185,17 @@ test("writeLogEntry: two developers get two separate files (no shared file)", as
   expect(a).toBe(resolve(TMP, "log", "alice.md"))
   expect(b).toBe(resolve(TMP, "log", "bob.md"))
   expect(a).not.toBe(b)
+})
+
+test("writeLogEntry: adopts new layout with no pre-existing dir (Bun.write auto-creates log/)", async () => {
+  // No mkdir at all — neither TMP, log/, nor log.md exists beforehand.
+  const path = await writeLogEntry({
+    logDir: resolve(TMP, "log"),
+    legacyLog: resolve(TMP, "log.md"),
+    dev: "ray-chang",
+    entry: formatLogEntry("ingest", "x", ["y"]),
+  })
+  expect(path).toBe(resolve(TMP, "log", "ray-chang.md"))
+  expect(await Bun.file(path).exists()).toBe(true)
+  expect(await Bun.file(path).text()).toContain("# Wiki — Log (ray-chang)")
 })
