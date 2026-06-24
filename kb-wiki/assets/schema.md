@@ -59,6 +59,7 @@ Every wiki page uses this structure:
 ```markdown
 ---
 title: Page Title
+summary: One sentence (≤25 words) — what this page establishes, readable on its own without the index.
 category: {category}
 tags: [tag1, tag2]
 status: seedling | developing | mature
@@ -76,6 +77,8 @@ Use `→ raw/sources/filename.md` to cite raw sources.
 - [[category/related-page-1]]
 - [[category/related-page-2]]
 ```
+
+`summary` is the page's standalone abstract — it orients an agent that opens the page directly, and is what `map` pulls from for the page's one-line entry in `index.md` (so the two never drift). One sentence, stating what the page establishes.
 
 ## Wiki Link Convention
 

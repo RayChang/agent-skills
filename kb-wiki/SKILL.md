@@ -111,6 +111,7 @@ To initialize a KB when a project has none:
    ```markdown
    ---
    title: Overview
+   summary: High-level synthesis of the KB — the project's big picture in one line.
    category: root
    tags: [overview, synthesis]
    status: seedling
@@ -148,7 +149,7 @@ To ingest a source from `kb/raw/sources/`:
 4. Identify which existing wiki pages it relates to, and what new pages are needed
 5. **Duplicate check**: before creating a new page, scan existing page titles and tags for near-matches (aliases, alternate spellings, abbreviations). If a concept already has a page under a different name, update the existing page instead of creating a duplicate. When in doubt, ask the user.
 6. **Concept threshold**: a concept this source mentions only in passing does not get a standalone page yet — record it in the source summary's Key Terms (step 8) or the closest related page, and promote it to its own page once a second source or query touches it. Concepts central to the project are exempt: create them immediately.
-7. Create new pages and/or update existing pages — a single source can touch multiple pages. New pages default to `status: seedling`.
+7. Create new pages and/or update existing pages — a single source can touch multiple pages. New pages default to `status: seedling`. Every page — new or updated — carries a one-line `summary:` in its frontmatter: a standalone abstract that orients an agent reading the page without the index, and the source `map` pulls from for the index one-liner (Page format in `references/schema.md`). When you materially change what a page establishes, update its `summary` too.
 8. **Write a per-source summary** at `kb/wiki/summaries/{source-slug}.md` — the ingest ledger and retrieval backbone. Keep it brief: frontmatter (`source`, optional `origin: external | self`, `ingested` date, `tags`), 3–6 key-takeaway bullets, Key Terms, and links to every page touched. Format in `references/schema.md`.
 9. Update `kb/wiki/overview.md` only if the new source shifts the big picture (new thesis, changed architecture, overturned assumption) — not for routine additions
 10. Update `kb/wiki/index.md`: add new pages, update one-line summaries if changed, and list the new summary in the Sources section (create the section on first ingest — format in `references/schema.md`)
@@ -199,7 +200,7 @@ If Bun is unavailable (command not found), fall back to doing it manually:
 2. Check for:
    - **Broken links**: `[[page]]` references that don't have a corresponding file — skip links inside any log file (`log.md` or `log/*.md`) — append-only history; links legitimately rot when pages are renamed
    - **Orphan pages**: pages with no inbound links from other pages
-   - **Missing frontmatter**: content pages lacking YAML frontmatter or its required fields (`title`, `category`, `tags`) — `summaries/` pages use their own frontmatter and are exempt
+   - **Missing frontmatter**: content pages lacking YAML frontmatter or its required fields (`title`, `category`, `tags`) — `summaries/` pages use their own frontmatter and are exempt. Separately, flag at **info** level any content page missing the recommended `summary` field (a one-line standalone abstract) — info not warning, so legacy pages are nudged, not alarmed (consistent with Migrate's "don't bulk-rewrite existing pages")
    - **Empty categories**: category directories with no pages
    - **Un-ingested sources**: files in `kb/raw/sources/` with no corresponding `summaries/` page and no page citing them — the KB is silently lagging its sources
    - **Missing summaries**: sources that pages do cite but that have no `summaries/` page — the ledger is incomplete (typically a pre-migration KB; backfill via Migrate)
@@ -298,7 +299,7 @@ If Bun is unavailable (command not found), fall back to doing it manually:
    ---
    **Total: N pages**
    ```
-   Sort pages alphabetically within each category. Write accurate one-line summaries by reading each page — do not copy old summaries blindly. Summaries appear only in the Sources section — they get no MOC and do not count toward the page total.
+   Sort pages alphabetically within each category. For each page's one-line summary, prefer its frontmatter `summary` field when present (that field is the page's canonical abstract — using it keeps index and page in sync); fall back to reading the page and writing one only when `summary` is absent. Do not copy old index summaries blindly. Summaries appear only in the Sources section — they get no MOC and do not count toward the page total.
 4. For each category, create/update `kb/wiki/{category}/_moc.md`:
    ```markdown
    # {Category} — Map of Content
@@ -372,6 +373,7 @@ For KBs created by an older version of this skill. Symptoms: no `wiki/summaries/
 - **No silent propagation** — filed-back content keeps its citations and `origin`; a claim resting on a single external source stays `seedling` and is never laundered into an un-cited fact that later pages treat as ground truth
 - **Always update `index.md` and the current developer's log file** (`kb/wiki/log/<dev>.md`) after any wiki change
 - **Per-source summaries are the ingest ledger** — every ingested source gets a brief `summaries/` page; Lint flags raw files that no summary or page references
+- **Every content page carries a one-line `summary`** — an in-page abstract so a page read in isolation is self-orienting and the index can be built from it without drift. New pages get one at creation; legacy pages get one on their next regular touch (Lint nudges at info level, never bulk-rewrites). Distinct from the per-source `summaries/` ledger above
 - **Link liberally** — cross-references between pages are what give the wiki its value
 - **Keep index.md summaries accurate and specific** — at ~100 pages / hundreds of thousands of words, a well-maintained index is what makes direct LLM reads sufficient; RAG is not needed at this scale. As the wiki grows beyond this, introduce search tools (e.g. qmd) as a scaling complement — not a replacement for the index.
 - **File outputs back** — query answers are wiki contributions, not disposable chat responses

@@ -29,6 +29,7 @@ Every wiki page uses this frontmatter + structure:
 ```markdown
 ---
 title: Page Title
+summary: One sentence (≤25 words) stating what this page establishes — a standalone abstract for an agent reading the page without the index.
 category: concepts | integrations | competitors | patterns | lessons
 tags: [tag1, tag2]
 status: seedling | developing | mature
@@ -45,6 +46,8 @@ Use `→ raw/sources/filename.md` to cite raw sources inline.
 ## See Also
 - [[category/related-page]]
 ```
+
+The `summary` field is the page's in-place abstract: it makes a page self-orienting when read in isolation (without first reading `index.md`), and it is the canonical source `kb:map` should pull from when writing the page's one-line entry in `index.md` — keeping the index and the page from drifting apart. Keep it to a single sentence describing what the page *establishes*, not a teaser.
 
 ## Summary Page Format (wiki/summaries/)
 
