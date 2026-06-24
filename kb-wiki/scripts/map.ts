@@ -49,21 +49,30 @@ function parsePage(relativePath: string, content: string): PageInfo {
     ? tagsMatch[1].split(",").map((t) => t.trim().replace(/[\[\]"']/g, ""))
     : []
 
-  // First meaningful paragraph as summary — scan the body only, after frontmatter,
-  // so unanticipated frontmatter keys (source, origin, ingested, …) never leak in
-  const body = fmMatch ? content.slice(fmMatch[0].length) : content
+  // Summary precedence:
+  // 1. the page's frontmatter `summary:` field — the canonical, hand-written abstract;
+  //    using it keeps index/MOC in lockstep with the page (no drift).
+  // 2. fallback: first meaningful body paragraph — covers legacy pages without the
+  //    field and the summaries/ ledger pages (whose frontmatter carries no `summary`).
+  // Body is scanned after the frontmatter block so other frontmatter keys never leak in.
   let summary = ""
-  for (const line of body.split("\n")) {
-    const trimmed = line.trim()
-    if (
-      trimmed &&
-      !trimmed.startsWith("#") &&
-      !trimmed.startsWith(">") &&
-      !trimmed.startsWith("---") &&
-      trimmed.length > 20
-    ) {
-      summary = trimmed.slice(0, 150)
-      break
+  const summaryMatch = fm.match(/^summary:\s*"?(.+?)"?\s*$/m)
+  if (summaryMatch) {
+    summary = summaryMatch[1].trim()
+  } else {
+    const body = fmMatch ? content.slice(fmMatch[0].length) : content
+    for (const line of body.split("\n")) {
+      const trimmed = line.trim()
+      if (
+        trimmed &&
+        !trimmed.startsWith("#") &&
+        !trimmed.startsWith(">") &&
+        !trimmed.startsWith("---") &&
+        trimmed.length > 20
+      ) {
+        summary = trimmed.slice(0, 150)
+        break
+      }
     }
   }
 
