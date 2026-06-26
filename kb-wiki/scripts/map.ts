@@ -32,7 +32,7 @@ interface PageInfo {
 
 // ─── Page Parser ──────────────────────────────────────────
 
-function parsePage(relativePath: string, content: string): PageInfo {
+export function parsePage(relativePath: string, content: string): PageInfo {
   const slug = relativePath.replace(".md", "")
   const parts = relativePath.split("/")
   const category = parts.length > 1 ? parts[0] : "root"
@@ -362,7 +362,10 @@ async function main() {
   console.log("\nMap complete.")
 }
 
-main().catch((err) => {
-  console.error("Fatal error:", err)
-  process.exit(1)
-})
+// Only run when executed directly — keeps parsePage importable from tests
+if (import.meta.main) {
+  main().catch((err) => {
+    console.error("Fatal error:", err)
+    process.exit(1)
+  })
+}
