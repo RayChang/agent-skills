@@ -12,6 +12,7 @@
  *   bun ~/.claude/skills/kb-wiki/scripts/map.ts --deep   # Also discover missing links via LLM
  */
 
+import { existsSync } from "fs"
 import { resolve } from "path"
 import { config, discoverCategories } from "./lib/config"
 import { askJson } from "./lib/ai"
@@ -49,9 +50,11 @@ export function parsePage(relativePath: string, content: string): PageInfo {
     ? tagsMatch[1].split(",").map((t) => t.trim().replace(/[\[\]"']/g, ""))
     : []
 
-  // Summary precedence:
-  // 1. the page's frontmatter `summary:` field — the canonical, hand-written abstract;
-  //    using it keeps index/MOC in lockstep with the page (no drift).
+  // Summary precedence — this is the per-page EXTRACTED value only. The index/MOC
+  // emitter prefers a preserved curated one-liner over this (see resolveSummary), so a
+  // frontmatter `summary:` drives the index only for a page new to it, or on
+  // --regen-summaries. Extraction order:
+  // 1. the page's frontmatter `summary:` field — the canonical, hand-written abstract.
   // 2. fallback: first meaningful body paragraph — covers legacy pages without the
   //    field and the summaries/ ledger pages (whose frontmatter carries no `summary`).
   // Body is scanned after the frontmatter block so other frontmatter keys never leak in.
@@ -82,9 +85,51 @@ export function parsePage(relativePath: string, content: string): PageInfo {
   return { relativePath, slug, title, category, tags, summary, outboundLinks, content }
 }
 
+// ─── Curated-summary preservation ─────────────────────────
+
+// One index entry: `- [[slug]] — summary` (Overview, category, and Sources lines all
+// share this shape). The slug may carry an optional `|Display` alias. The separator is
+// the em-dash with single surrounding spaces, exactly as buildIndex emits it; we split
+// on the FIRST such separator so a summary may itself contain " — ".
+const INDEX_ENTRY = /^- \[\[([^\]|]+)(?:\|[^\]]*)?\]\] — (.+)$/
+
+/**
+ * Parse an existing index.md into a `slug -> summary` map. The one-liner in index.md is
+ * human-owned content (often hand-curated and richer than a page's opening sentence), so
+ * a rebuild harvests these to preserve them rather than re-flattening from page bodies.
+ * First occurrence of a slug wins; non-entry lines (headings, separators, prose) are
+ * ignored. Returns an empty map for empty/absent content (first-run safety).
+ */
+export function parseIndexSummaries(indexContent: string): Map<string, string> {
+  const summaries = new Map<string, string>()
+  for (const line of indexContent.split("\n")) {
+    const m = line.match(INDEX_ENTRY)
+    if (m && !summaries.has(m[1])) summaries.set(m[1], m[2])
+  }
+  return summaries
+}
+
+/**
+ * Pick the one-liner for a page: a non-empty preserved (curated) summary wins verbatim;
+ * otherwise fall back to the freshly-extracted one (frontmatter `summary` or first-body
+ * slice from parsePage). Passing an empty `preserved` map (e.g. --regen-summaries or a
+ * first run with no index) makes this always re-extract.
+ */
+export function resolveSummary(
+  slug: string,
+  fallback: string,
+  preserved: Map<string, string>,
+): string {
+  const kept = preserved.get(slug)
+  return kept && kept.trim() ? kept : fallback
+}
+
 // ─── Index Builder ────────────────────────────────────────
 
-async function buildIndex(pages: PageInfo[]): Promise<string> {
+async function buildIndex(
+  pages: PageInfo[],
+  preserved: Map<string, string>,
+): Promise<string> {
   const categories = await discoverCategories()
   const byCategory = new Map<string, PageInfo[]>()
 
@@ -116,7 +161,7 @@ async function buildIndex(pages: PageInfo[]): Promise<string> {
   if (root.length > 0) {
     lines.push(`## Overview (${root.length})`)
     for (const p of root.sort((a, b) => a.title.localeCompare(b.title))) {
-      lines.push(`- [[${p.slug}]] — ${p.summary || p.title}`)
+      lines.push(`- [[${p.slug}]] — ${resolveSummary(p.slug, p.summary || p.title, preserved)}`)
     }
     lines.push("")
   }
@@ -129,7 +174,7 @@ async function buildIndex(pages: PageInfo[]): Promise<string> {
     const label = cat.charAt(0).toUpperCase() + cat.slice(1)
     lines.push(`## ${label} (${catPages.length})`)
     for (const p of catPages.sort((a, b) => a.title.localeCompare(b.title))) {
-      lines.push(`- [[${p.slug}]] — ${p.summary || p.title}`)
+      lines.push(`- [[${p.slug}]] — ${resolveSummary(p.slug, p.summary || p.title, preserved)}`)
     }
     lines.push("")
   }
@@ -141,7 +186,9 @@ async function buildIndex(pages: PageInfo[]): Promise<string> {
   if (sources.length > 0) {
     lines.push(`## Sources (${sources.length})`)
     for (const p of sources.sort((a, b) => a.title.localeCompare(b.title))) {
-      const takeaway = (p.summary || p.title).replace(/^[-*]\s*/, "")
+      // A preserved takeaway is already bullet-stripped (it was emitted post-strip), so
+      // re-stripping is a no-op and the line stays byte-identical.
+      const takeaway = resolveSummary(p.slug, p.summary || p.title, preserved).replace(/^[-*]\s*/, "")
       lines.push(`- [[${p.slug}]] — ${takeaway}`)
     }
     lines.push("")
@@ -163,7 +210,11 @@ function detectProjectName(): string {
 
 // ─── MOC Builder ──────────────────────────────────────────
 
-function buildMoc(category: string, pages: PageInfo[]): string {
+function buildMoc(
+  category: string,
+  pages: PageInfo[],
+  preserved: Map<string, string>,
+): string {
   const label = category.charAt(0).toUpperCase() + category.slice(1)
   const lines = [
     `# ${label} — Map of Content`,
@@ -176,7 +227,9 @@ function buildMoc(category: string, pages: PageInfo[]): string {
 
   for (const page of pages.sort((a, b) => a.title.localeCompare(b.title))) {
     lines.push(`## [[${page.slug}|${page.title}]]`)
-    if (page.summary) lines.push("", page.summary)
+    // Mirror the index: prefer the curated one-liner so the MOC never re-flattens it.
+    const summary = resolveSummary(page.slug, page.summary, preserved)
+    if (summary) lines.push("", summary)
     if (page.tags.length > 0) {
       lines.push("", `Tags: ${page.tags.map((t) => `\`${t}\``).join(", ")}`)
     }
@@ -279,8 +332,19 @@ async function injectLinks(suggestions: LinkSuggestion[], pages: PageInfo[]): Pr
 async function main() {
   const args = process.argv.slice(2)
   const deep = args.includes("--deep")
+  const regenSummaries = args.includes("--regen-summaries")
 
   console.log(`KB Map — ${deep ? "deep mode (with LLM)" : "structural rebuild"}...\n`)
+
+  // Preserve hand-curated index one-liners: harvest the existing index.md before we
+  // overwrite it, so a rebuild reuses each page's curated summary verbatim instead of
+  // re-flattening it from the page body. --regen-summaries opts out (re-extract all);
+  // a first run with no index.md naturally yields an empty map (extract all).
+  const preserved =
+    !regenSummaries && existsSync(config.kb.index)
+      ? parseIndexSummaries(await Bun.file(config.kb.index).text())
+      : new Map<string, string>()
+  if (regenSummaries) console.log("--regen-summaries: re-extracting every summary from page bodies\n")
 
   // Include summaries/ so the index's Sources section can be built
   const rawPages = await readAllWikiPages({ includeSummaries: true })
@@ -290,7 +354,7 @@ async function main() {
 
   // Rebuild index.md
   process.stdout.write("Rebuilding index.md...")
-  const indexContent = await buildIndex(pages)
+  const indexContent = await buildIndex(pages, preserved)
   await Bun.write(config.kb.index, indexContent + "\n")
   console.log(" done")
 
@@ -302,7 +366,7 @@ async function main() {
     )
     if (catPages.length === 0) continue
 
-    const mocContent = buildMoc(cat, catPages)
+    const mocContent = buildMoc(cat, catPages, preserved)
     const mocPath = resolve(config.kb.wiki, cat, "_moc.md")
     await Bun.write(mocPath, mocContent + "\n")
     mocCount++

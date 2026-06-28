@@ -4,7 +4,7 @@ import { test, expect, mock } from "bun:test"
 // this skill repo (it's auto-installed only when a script is run directly). Stub it
 // so we can import the pure parsePage without the SDK present. parsePage uses none of it.
 mock.module("@anthropic-ai/sdk", () => ({ default: class {} }))
-const { parsePage } = await import("./map")
+const { parsePage, parseIndexSummaries, resolveSummary } = await import("./map")
 
 // parsePage summary precedence: frontmatter `summary:` is canonical (keeps index/MOC
 // in lockstep with the page); pages without it fall back to the first body paragraph.
@@ -67,4 +67,72 @@ tags: [a]
   )
   // body fallback strips no markup; Sources section trims the leading bullet downstream
   expect(page.summary).toBe("- Key takeaway bullet that the index Sources section should surface.")
+})
+
+// parseIndexSummaries: harvest existing one-liners so a rebuild can preserve curated
+// summaries instead of re-flattening them from page bodies.
+
+test("parseIndexSummaries: harvests category, overview, and Sources lines", () => {
+  const index = `# Demo Wiki — Index
+
+> Auto-maintained by \`kb:map\`. Last updated: 2026-06-29
+
+---
+
+## Overview (1)
+- [[overview]] — The project big-picture in one curated line.
+
+## Concepts (2)
+- [[concepts/ratio]] — P/E: a curated valuation explainer, richer than the body.
+- [[concepts/widget]] — A hand-written widget summary worth keeping.
+
+## Sources (1)
+- [[summaries/some-source]] — Curated takeaway from the source.
+
+---
+**Total: 3 pages**`
+  const map = parseIndexSummaries(index)
+  expect(map.get("overview")).toBe("The project big-picture in one curated line.")
+  expect(map.get("concepts/ratio")).toBe("P/E: a curated valuation explainer, richer than the body.")
+  expect(map.get("concepts/widget")).toBe("A hand-written widget summary worth keeping.")
+  expect(map.get("summaries/some-source")).toBe("Curated takeaway from the source.")
+  expect(map.size).toBe(4)
+})
+
+test("parseIndexSummaries: keeps a summary that itself contains an em-dash", () => {
+  const map = parseIndexSummaries("- [[concepts/x]] — before — after")
+  expect(map.get("concepts/x")).toBe("before — after")
+})
+
+test("parseIndexSummaries: ignores headings, separators, and non-entry lines", () => {
+  const map = parseIndexSummaries("## Concepts (1)\n\n---\nrandom prose line\n")
+  expect(map.size).toBe(0)
+})
+
+test("parseIndexSummaries: empty/missing content yields an empty map", () => {
+  expect(parseIndexSummaries("").size).toBe(0)
+})
+
+// resolveSummary: preserve a non-empty prior summary verbatim; otherwise fall back to
+// the freshly-extracted one (frontmatter summary or first-paragraph slice via parsePage).
+
+test("resolveSummary: reuses a non-empty preserved summary verbatim", () => {
+  const preserved = new Map([["concepts/widget", "Curated and worth keeping."]])
+  expect(resolveSummary("concepts/widget", "crude body slice", preserved)).toBe(
+    "Curated and worth keeping.",
+  )
+})
+
+test("resolveSummary: falls back to extraction when the slug is new", () => {
+  const preserved = new Map([["concepts/widget", "old"]])
+  expect(resolveSummary("concepts/newpage", "freshly extracted", preserved)).toBe(
+    "freshly extracted",
+  )
+})
+
+test("resolveSummary: falls back when the preserved summary is empty/whitespace", () => {
+  const preserved = new Map([["concepts/widget", "   "]])
+  expect(resolveSummary("concepts/widget", "freshly extracted", preserved)).toBe(
+    "freshly extracted",
+  )
 })

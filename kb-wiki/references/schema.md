@@ -47,7 +47,7 @@ Use `→ raw/sources/filename.md` to cite raw sources inline.
 - [[category/related-page]]
 ```
 
-The `summary` field is the page's in-place abstract: it makes a page self-orienting when read in isolation (without first reading `index.md`), and it is the canonical source `kb:map` should pull from when writing the page's one-line entry in `index.md` — keeping the index and the page from drifting apart. Keep it to a single sentence describing what the page *establishes*, not a teaser.
+The `summary` field is the page's in-place abstract: it makes a page self-orienting when read in isolation (without first reading `index.md`), and `kb:map` pulls from it when **first** writing a page's one-line entry in `index.md`. Existing index one-liners are human-owned and preserved verbatim on a default run — run `kb:map --regen-summaries` to re-pull this field into the index. Keep it to a single sentence describing what the page *establishes*, not a teaser.
 
 ## Summary Page Format (wiki/summaries/)
 
@@ -98,6 +98,8 @@ Summaries are excluded from MOCs and category listings; they appear in the index
 ---
 **Total: N pages**
 ```
+
+Each one-liner is human-owned: `kb:map` preserves an existing index entry's summary verbatim and only extracts one for a page new to the index (or with no prior summary). Run `kb:map --regen-summaries` to re-extract them all from page bodies.
 
 ## log/ Format (one file per developer)
 

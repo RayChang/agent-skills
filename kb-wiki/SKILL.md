@@ -272,9 +272,12 @@ State which pages you skipped and why. Discover the set from `kb/wiki/index.md` 
 
 Use the Bash tool to run the script directly (deterministic, no extra tokens):
 ```bash
-bun ~/.claude/skills/kb-wiki/scripts/map.ts           # rebuild index + MOCs
-bun ~/.claude/skills/kb-wiki/scripts/map.ts --deep    # + LLM cross-link discovery
+bun ~/.claude/skills/kb-wiki/scripts/map.ts                    # rebuild index + MOCs (preserves curated one-liners)
+bun ~/.claude/skills/kb-wiki/scripts/map.ts --deep             # + LLM cross-link discovery
+bun ~/.claude/skills/kb-wiki/scripts/map.ts --regen-summaries  # re-extract every index/MOC summary from page bodies
 ```
+
+> **Summaries are human-owned.** By default `map` preserves each one-liner already in `index.md` verbatim — those lines are often hand-curated to be richer than a page's opening sentence, and a rebuild must never flatten them. It still adds new pages, drops vanished ones, and rebuilds counts/MOCs/Sources. Only pages new to the index (or with no prior summary) get an extracted summary. Use `--regen-summaries` to deliberately refresh stale one-liners (re-extracts all); staleness of a curated summary is otherwise a human edit, not something `map` auto-"fixes".
 
 If Bun is unavailable (command not found), fall back to doing it manually:
 
@@ -299,7 +302,7 @@ If Bun is unavailable (command not found), fall back to doing it manually:
    ---
    **Total: N pages**
    ```
-   Sort pages alphabetically within each category. For each page's one-line summary, prefer its frontmatter `summary` field when present (that field is the page's canonical abstract — using it keeps index and page in sync); fall back to reading the page and writing one only when `summary` is absent. Do not copy old index summaries blindly. Summaries appear only in the Sources section — they get no MOC and do not count toward the page total.
+   Sort pages alphabetically within each category. **Preserve existing one-liners by default**: if a page already has a summary in the current `index.md`, reuse it verbatim — that line is human-owned and often hand-curated to be richer than the page body, so a rebuild must not flatten it. Only generate a summary for a page that is new to the index (or has no prior one): prefer its frontmatter `summary` field (the page's canonical abstract), else fall back to the first meaningful body paragraph. Pass `--regen-summaries` to deliberately re-extract every summary from page bodies. The same preserve-then-extract rule applies to the per-page MOC summary blocks. Per-source `summaries/` ledger entries appear only in the Sources section — they get no MOC and do not count toward the page total.
 4. For each category, create/update `kb/wiki/{category}/_moc.md`:
    ```markdown
    # {Category} — Map of Content
