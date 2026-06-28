@@ -1,8 +1,8 @@
 import { test, expect, mock } from "bun:test"
 
-// map.ts statically imports ./lib/ai → @anthropic-ai/sdk, which isn't installed in
-// this skill repo (it's auto-installed only when a script is run directly). Stub it
-// so we can import the pure parsePage without the SDK present. parsePage uses none of it.
+// map.ts loads ./lib/ai (→ @anthropic-ai/sdk) lazily, only inside the --deep branch, so
+// importing parsePage never touches the SDK. This stub is a harmless guard in case the
+// import chain regresses to a static SDK dependency; parsePage itself uses none of it.
 mock.module("@anthropic-ai/sdk", () => ({ default: class {} }))
 const { parsePage, parseIndexSummaries, resolveSummary } = await import("./map")
 
