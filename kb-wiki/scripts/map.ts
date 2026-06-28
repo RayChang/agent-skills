@@ -15,8 +15,11 @@
 import { existsSync } from "fs"
 import { resolve } from "path"
 import { config, discoverCategories } from "./lib/config"
-import { askJson } from "./lib/ai"
 import { readAllWikiPages, appendLog, todayDate, isLogFile } from "./lib/kb"
+// NOTE: ./lib/ai (which imports @anthropic-ai/sdk) is intentionally NOT imported at the top
+// level. The default deterministic rebuild must run with zero SDK dependency; only the
+// --deep LLM path loads it, lazily, inside main(). A static import here would make the SDK
+// an unconditional launch requirement and crash a plain `map` when it isn't installed.
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -257,6 +260,7 @@ const MAP_SYSTEM = `You are a knowledge graph analyst. Find missing connections 
 
 async function discoverMissingLinks(
   pages: PageInfo[],
+  askJson: typeof import("./lib/ai")["askJson"],
 ): Promise<{ suggestions: LinkSuggestion[]; tokens: { input: number; output: number } }> {
   const pageList = pages
     .filter(
@@ -403,7 +407,20 @@ async function main() {
 
   if (deep) {
     console.log("\nRunning LLM cross-link discovery...")
-    const { suggestions, tokens } = await discoverMissingLinks(contentPages)
+    // Load the AI layer (and @anthropic-ai/sdk) only now — the structural rebuild above is
+    // already written, so a missing SDK costs only the optional --deep step, not the run.
+    let askJson: typeof import("./lib/ai")["askJson"]
+    try {
+      ;({ askJson } = await import("./lib/ai"))
+    } catch {
+      console.error(
+        "\n--deep needs @anthropic-ai/sdk (the LLM cross-link step), which isn't installed.\n" +
+          "The deterministic index/MOC rebuild already completed. Run a plain `map` (no --deep)\n" +
+          "for the structural rebuild, or install the SDK (`bun install` in the skill dir) to use --deep.",
+      )
+      process.exit(1)
+    }
+    const { suggestions, tokens } = await discoverMissingLinks(contentPages, askJson)
     totalTokens = tokens.input + tokens.output
     console.log(`Found ${suggestions.length} suggestions (${totalTokens} tokens)`)
 

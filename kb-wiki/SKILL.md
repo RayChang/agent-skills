@@ -279,6 +279,8 @@ bun ~/.claude/skills/kb-wiki/scripts/map.ts --regen-summaries  # re-extract ever
 
 > **Summaries are human-owned.** By default `map` preserves each one-liner already in `index.md` verbatim — those lines are often hand-curated to be richer than a page's opening sentence, and a rebuild must never flatten them. It still adds new pages, drops vanished ones, and rebuilds counts/MOCs/Sources. Only pages new to the index (or with no prior summary) get an extracted summary. Use `--regen-summaries` to deliberately refresh stale one-liners (re-extracts all); staleness of a curated summary is otherwise a human edit, not something `map` auto-"fixes".
 
+> **Only `--deep` needs `@anthropic-ai/sdk`.** The default (and `--regen-summaries`) rebuild is fully deterministic and loads no AI dependency — it runs even when the SDK isn't installed. `--deep` lazily loads the SDK for the LLM cross-link step; if it can't be resolved, `map` completes the structural rebuild and then exits with an actionable message rather than crashing on a module error.
+
 If Bun is unavailable (command not found), fall back to doing it manually:
 
 1. Read all pages in `kb/wiki/` (excluding log files (`log.md` / `log/*.md`), `_moc.md` files, and `summaries/`)

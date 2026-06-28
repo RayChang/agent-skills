@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test"
-import { mkdtemp, rm, mkdir, writeFile, readFile } from "fs/promises"
+import { mkdtemp, rm, mkdir, writeFile, readFile, cp } from "fs/promises"
 import { tmpdir } from "os"
-import { resolve, join } from "path"
+import { resolve, join, dirname } from "path"
 
 // End-to-end guard for curated-summary preservation: seed a fixture KB whose index.md
 // holds hand-curated one-liners (richer than the page bodies) plus a page that is NOT yet
@@ -11,11 +11,11 @@ import { resolve, join } from "path"
 const scriptsDir = import.meta.dir
 const mapPath = resolve(scriptsDir, "map.ts")
 
-// map.ts statically imports @anthropic-ai/sdk, which a clean checkout auto-installs only on
-// a direct run (bun resolves it at runtime, not via a static node_modules lookup). Probe
-// the way the real subprocess does — an actual import — and skip when it can't be obtained
-// so the suite stays green offline/SDK-less. The core logic is covered hermetically in
-// map.test.ts; this file only adds end-to-end wiring confidence when the SDK is present.
+// The default (non-deep) map is deterministic and must NOT require @anthropic-ai/sdk — the
+// SDK is only for the --deep LLM path. These first two tests exercise the default/regen
+// behaviour with the SDK present (the common dev machine). The isolated no-SDK tests at the
+// bottom are the regression guard proving the default path launches with the SDK absent.
+// Probe whether the SDK resolves so the present-SDK tests skip cleanly when it doesn't.
 let sdkAvailable = false
 try {
   const probe = Bun.spawnSync(["bun", "-e", "await import('@anthropic-ai/sdk')"], {
@@ -105,3 +105,70 @@ test.skipIf(!sdkAvailable)(
     }
   },
 )
+
+// ─── Regression: default map must run with @anthropic-ai/sdk ABSENT ────────────
+// The original code top-level-imported ./lib/ai (which imports @anthropic-ai/sdk), so even
+// the deterministic default run crashed at launch when the SDK could not be resolved —
+// `Cannot find module '@anthropic-ai/sdk'`. We reproduce a genuinely SDK-less environment:
+// a copy of scripts/ with no node_modules, auto-install disabled, and an empty install
+// cache, so nothing can transparently supply the SDK. The AI import must be lazy (loaded
+// only inside the --deep branch) for the default run to survive this.
+
+/** Run map.ts from an isolated copy of scripts/ where the SDK genuinely cannot resolve. */
+async function runMapNoSdk(
+  projectDir: string,
+  args: string[] = [],
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  const skillDir = await mkdtemp(join(tmpdir(), "kbskill-"))
+  const cacheDir = await mkdtemp(join(tmpdir(), "kbcache-")) // empty → SDK not in cache
+  try {
+    // Copy scripts/ (incl. lib/) but NOT node_modules / package.json — a bare script tree.
+    await cp(dirname(mapPath), join(skillDir, "scripts"), { recursive: true })
+    // bunfig in the cwd disables auto-install so the missing SDK can't be fetched on demand.
+    await writeFile(join(projectDir, "bunfig.toml"), `[install]\nauto = "disable"\n`)
+    const proc = Bun.spawn(["bun", join(skillDir, "scripts", "map.ts"), ...args], {
+      cwd: projectDir,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env, BUN_INSTALL_CACHE_DIR: cacheDir },
+    })
+    const exitCode = await proc.exited
+    return {
+      exitCode,
+      stdout: await new Response(proc.stdout).text(),
+      stderr: await new Response(proc.stderr).text(),
+    }
+  } finally {
+    await rm(skillDir, { recursive: true, force: true })
+    await rm(cacheDir, { recursive: true, force: true })
+  }
+}
+
+test("map (default) runs with @anthropic-ai/sdk absent and preserves curated summaries", async () => {
+  const d = await mkdtemp(join(tmpdir(), "kbmap-"))
+  try {
+    await seedFixture(d)
+    const { exitCode, stderr } = await runMapNoSdk(d)
+    expect(stderr).not.toContain("Cannot find module")
+    expect(exitCode).toBe(0)
+    const index = await readFile(join(d, "kb/wiki/index.md"), "utf8")
+    expect(index).toContain(`- [[concepts/widget]] — ${CURATED_WIDGET}`)
+    expect(index).toContain("## Concepts (2)")
+  } finally {
+    await rm(d, { recursive: true, force: true })
+  }
+})
+
+test("map --deep with the SDK absent fails with an actionable message, not a raw module error", async () => {
+  const d = await mkdtemp(join(tmpdir(), "kbmap-"))
+  try {
+    await seedFixture(d)
+    const { exitCode, stderr } = await runMapNoSdk(d, ["--deep"])
+    expect(exitCode).not.toBe(0)
+    // Actionable: names the dep and points at the plain deterministic rebuild.
+    expect(stderr).toContain("@anthropic-ai/sdk")
+    expect(stderr.toLowerCase()).toContain("--deep")
+  } finally {
+    await rm(d, { recursive: true, force: true })
+  }
+})
