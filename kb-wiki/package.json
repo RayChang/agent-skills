@@ -1,0 +1,11 @@
+{
+  "name": "kb-wiki-skill",
+  "private": true,
+  "description": "kb-wiki skill scripts. @types/bun gives the editor ambient types; @anthropic-ai/sdk must be declared (not only auto-installed) because installing the dev types creates a node_modules/, which switches Bun to node-resolution and would otherwise break the SDK's runtime auto-install. Run `bun install` here for editor type-checking.",
+  "devDependencies": {
+    "@types/bun": "^1.3.14"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.106.0"
+  }
+}
