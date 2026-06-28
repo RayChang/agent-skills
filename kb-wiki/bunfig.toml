@@ -1,0 +1,7 @@
+# Installing @types/bun (editor-only) creates a node_modules/ here, which normally
+# switches Bun from auto-install to node-resolution. @anthropic-ai/sdk is therefore
+# declared as a real dependency so it resolves regardless of cwd. "fallback" is a belt-
+# and-suspenders net: resolve from node_modules first, but still auto-install anything
+# missing — covers a partial/fresh checkout that has node_modules but skipped some dep.
+[install]
+auto = "fallback"

@@ -59,6 +59,7 @@ Every wiki page uses this structure:
 ```markdown
 ---
 title: Page Title
+summary: One sentence (≤25 words) — what this page establishes, readable on its own without the index.
 category: {category}
 tags: [tag1, tag2]
 status: seedling | developing | mature
@@ -76,6 +77,8 @@ Use `→ raw/sources/filename.md` to cite raw sources.
 - [[category/related-page-1]]
 - [[category/related-page-2]]
 ```
+
+`summary` is the page's standalone abstract — it orients an agent that opens the page directly, and is what `map` pulls from for a page's one-line entry in `index.md` **when that page is first added to the index**. Existing index one-liners are human-owned and preserved verbatim on a default `map` run; use `map --regen-summaries` to re-pull this field into the index. One sentence, stating what the page establishes.
 
 ## Wiki Link Convention
 
@@ -121,8 +124,8 @@ Periodic health checks:
 
 Rebuild navigation structure:
 
-- Rebuild `wiki/index.md` with accurate one-line summaries (categories + Sources section)
-- Regenerate `{category}/_moc.md` files (summaries get no MOC)
+- Rebuild `wiki/index.md` (categories + Sources section); **preserve existing one-liners verbatim** — they are human-owned and may be hand-curated. Only new pages (or those with no prior summary) get an extracted one; `--regen-summaries` re-extracts all
+- Regenerate `{category}/_moc.md` files, applying the same summary preservation (summaries/ ledger pages get no MOC)
 - Add missing cross-links between related pages
 
 ### Verify

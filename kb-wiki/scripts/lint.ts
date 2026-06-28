@@ -139,6 +139,18 @@ function checkMissingFrontmatter(
         })
       }
     }
+
+    // `summary` is a recommended (not required) field: a one-line standalone abstract.
+    // Info severity — legacy pages predate it and Migrate intentionally does not bulk-rewrite
+    // existing pages, so this nudges without alarming.
+    if (!fm.includes("summary:")) {
+      issues.push({
+        severity: "info",
+        category: "frontmatter",
+        message: `Missing recommended frontmatter field: summary (one-line standalone abstract)`,
+        file: page.relativePath,
+      })
+    }
   }
 
   return issues

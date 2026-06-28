@@ -29,6 +29,7 @@ Every wiki page uses this frontmatter + structure:
 ```markdown
 ---
 title: Page Title
+summary: One sentence (≤25 words) stating what this page establishes — a standalone abstract for an agent reading the page without the index.
 category: concepts | integrations | competitors | patterns | lessons
 tags: [tag1, tag2]
 status: seedling | developing | mature
@@ -45,6 +46,8 @@ Use `→ raw/sources/filename.md` to cite raw sources inline.
 ## See Also
 - [[category/related-page]]
 ```
+
+The `summary` field is the page's in-place abstract: it makes a page self-orienting when read in isolation (without first reading `index.md`), and `kb:map` pulls from it when **first** writing a page's one-line entry in `index.md`. Existing index one-liners are human-owned and preserved verbatim on a default run — run `kb:map --regen-summaries` to re-pull this field into the index. Keep it to a single sentence describing what the page *establishes*, not a teaser.
 
 ## Summary Page Format (wiki/summaries/)
 
@@ -95,6 +98,8 @@ Summaries are excluded from MOCs and category listings; they appear in the index
 ---
 **Total: N pages**
 ```
+
+Each one-liner is human-owned: `kb:map` preserves an existing index entry's summary verbatim and only extracts one for a page new to the index (or with no prior summary). Run `kb:map --regen-summaries` to re-extract them all from page bodies.
 
 ## log/ Format (one file per developer)
 

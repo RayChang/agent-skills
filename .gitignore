@@ -1,6 +1,9 @@
 # Worktrees
 .worktrees/
 
+# Node / Bun (skills auto-install runtime deps; @types/bun is a dev-only install)
+node_modules/
+
 # Python
 __pycache__/
 *.py[cod]
