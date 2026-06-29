@@ -160,11 +160,13 @@ async function buildIndex(
     "",
   ]
 
-  // Root pages first (overview.md, etc.)
+  // Root pages first (overview.md, etc.). Sort by slug, not title: every entry is
+  // displayed as `[[slug]]`, so slug order is what a reader scans — a title sort would
+  // scramble the slug column (especially with mixed EN/ZH titles). Same for all loops below.
   const root = byCategory.get("root") ?? []
   if (root.length > 0) {
     lines.push(`## Overview (${root.length})`)
-    for (const p of root.sort((a, b) => a.title.localeCompare(b.title))) {
+    for (const p of root.sort((a, b) => a.slug.localeCompare(b.slug))) {
       lines.push(`- [[${p.slug}]] — ${resolveSummary(p.slug, p.summary || p.title, preserved)}`)
     }
     lines.push("")
@@ -177,7 +179,7 @@ async function buildIndex(
     totalPages += catPages.length
     const label = cat.charAt(0).toUpperCase() + cat.slice(1)
     lines.push(`## ${label} (${catPages.length})`)
-    for (const p of catPages.sort((a, b) => a.title.localeCompare(b.title))) {
+    for (const p of catPages.sort((a, b) => a.slug.localeCompare(b.slug))) {
       lines.push(`- [[${p.slug}]] — ${resolveSummary(p.slug, p.summary || p.title, preserved)}`)
     }
     lines.push("")
@@ -189,7 +191,7 @@ async function buildIndex(
   )
   if (sources.length > 0) {
     lines.push(`## Sources (${sources.length})`)
-    for (const p of sources.sort((a, b) => a.title.localeCompare(b.title))) {
+    for (const p of sources.sort((a, b) => a.slug.localeCompare(b.slug))) {
       // A preserved takeaway is already bullet-stripped (it was emitted post-strip), so
       // re-stripping is a no-op and the line stays byte-identical.
       const takeaway = resolveSummary(p.slug, p.summary || p.title, preserved).replace(/^[-*]\s*/, "")
@@ -251,7 +253,7 @@ function buildMoc(
     "",
   ]
 
-  for (const page of pages.sort((a, b) => a.title.localeCompare(b.title))) {
+  for (const page of pages.sort((a, b) => a.slug.localeCompare(b.slug))) {
     lines.push(`## [[${page.slug}|${page.title}]]`)
     // Mirror the index: prefer the curated one-liner so the MOC never re-flattens it.
     const summary = resolveSummary(page.slug, page.summary, preserved)
