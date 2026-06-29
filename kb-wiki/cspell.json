@@ -1,5 +1,5 @@
 {
   "version": "0.2",
   "language": "en",
-  "words": ["regen", "frontmatter", "markitdown", "bunfig"]
+  "words": ["regen", "frontmatter", "markitdown", "bunfig", "worktrees", "worktree"]
 }
