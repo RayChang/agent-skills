@@ -4,7 +4,7 @@ import { test, expect, mock } from "bun:test"
 // importing parsePage never touches the SDK. This stub is a harmless guard in case the
 // import chain regresses to a static SDK dependency; parsePage itself uses none of it.
 mock.module("@anthropic-ai/sdk", () => ({ default: class {} }))
-const { parsePage, parseIndexSummaries, resolveSummary } = await import("./map")
+const { parsePage, parseIndexSummaries, resolveSummary, resolveProjectName } = await import("./map")
 
 // parsePage summary precedence: frontmatter `summary:` is canonical (keeps index/MOC
 // in lockstep with the page); pages without it fall back to the first body paragraph.
@@ -135,4 +135,39 @@ test("resolveSummary: falls back when the preserved summary is empty/whitespace"
   expect(resolveSummary("concepts/widget", "freshly extracted", preserved)).toBe(
     "freshly extracted",
   )
+})
+
+// resolveProjectName: the wiki title must come from kb/schema.md (Init substitutes the
+// project name there), never from the cwd basename — which is the worktree name inside
+// .worktrees/<name>/. Falls back to preserving the existing index.md title.
+
+test("resolveProjectName: takes the name from the schema.md title", () => {
+  const schema = "# FVG Knowledge Base — Schema\n\nThis file defines conventions."
+  expect(resolveProjectName(schema, null)).toBe("FVG")
+})
+
+test("resolveProjectName: keeps a multi-word project name", () => {
+  expect(resolveProjectName("# My Cool Project Knowledge Base — Schema", null)).toBe(
+    "My Cool Project",
+  )
+})
+
+test("resolveProjectName: schema absent → preserves the existing index.md title name", () => {
+  const index = "# FVG Wiki — Index\n\n> Auto-maintained by `kb:map`."
+  expect(resolveProjectName(null, index)).toBe("FVG")
+})
+
+test("resolveProjectName: unsubstituted {{PROJECT_NAME}} is ignored, falls through to index", () => {
+  const schema = "# {{PROJECT_NAME}} Knowledge Base — Schema"
+  const index = "# FVG Wiki — Index"
+  expect(resolveProjectName(schema, index)).toBe("FVG")
+})
+
+test("resolveProjectName: schema wins over the existing index title", () => {
+  expect(resolveProjectName("# FVG Knowledge Base — Schema", "# Old Name Wiki — Index")).toBe("FVG")
+})
+
+test("resolveProjectName: nothing usable → neutral 'Project', never the cwd", () => {
+  expect(resolveProjectName(null, null)).toBe("Project")
+  expect(resolveProjectName("# no title here", "no index title")).toBe("Project")
 })

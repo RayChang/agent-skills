@@ -9,6 +9,7 @@ export const config = {
   kb: {
     wiki: resolve(ROOT, "kb/wiki"),
     index: resolve(ROOT, "kb/wiki/index.md"),
+    schema: resolve(ROOT, "kb/schema.md"),
     logDir: resolve(ROOT, "kb/wiki/log"),
     legacyLog: resolve(ROOT, "kb/wiki/log.md"),
     rawSources: resolve(ROOT, "kb/raw/sources"),

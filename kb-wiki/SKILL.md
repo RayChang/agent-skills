@@ -285,7 +285,7 @@ If Bun is unavailable (command not found), fall back to doing it manually:
 
 1. Read all pages in `kb/wiki/` (excluding log files (`log.md` / `log/*.md`), `_moc.md` files, and `summaries/`)
 2. Discover existing categories from the directory structure — do not assume fixed category names
-3. Rebuild `kb/wiki/index.md`:
+3. Rebuild `kb/wiki/index.md` (take `{Project}` from the `kb/schema.md` title — `# {Project} Knowledge Base — Schema` — or preserve the existing `index.md` title; never use the directory/worktree name):
    ```markdown
    # {Project} Wiki — Index
 

@@ -172,3 +172,51 @@ test("map --deep with the SDK absent fails with an actionable message, not a raw
     await rm(d, { recursive: true, force: true })
   }
 })
+
+// ─── Regression: wiki title comes from kb/schema.md, never the cwd/worktree name ──
+// This project always runs inside .worktrees/<name>/, so the cwd basename is the worktree
+// name — deriving the title from it wrote e.g. `# kb-test Wiki`. mkdtemp gives a random
+// basename here, standing in for that wrong source; the title must instead read "FVG".
+
+async function seedOnePage(d: string): Promise<void> {
+  await mkdir(join(d, "kb/wiki/concepts"), { recursive: true })
+  await writeFile(
+    join(d, "kb/wiki/concepts/x.md"),
+    `---\ntitle: X\ncategory: concepts\ntags: [a]\n---\n\n# X\n\nBody long enough to be the fallback summary for this page here.\n`,
+  )
+}
+
+test("map titles the index from kb/schema.md, not the cwd/worktree basename", async () => {
+  const d = await mkdtemp(join(tmpdir(), "kb-test-")) // basename is NOT the project name
+  try {
+    await seedOnePage(d)
+    await writeFile(join(d, "kb/schema.md"), "# FVG Knowledge Base — Schema\n\nconventions.\n")
+    const { exitCode } = await runMapNoSdk(d)
+    expect(exitCode).toBe(0)
+    const index = await readFile(join(d, "kb/wiki/index.md"), "utf8")
+    expect(index.split("\n")[0]).toBe("# FVG Wiki — Index")
+    // The temp dir basename must NOT leak into the title.
+    expect(index).not.toContain(d.split("/").pop()!)
+  } finally {
+    await rm(d, { recursive: true, force: true })
+  }
+})
+
+test("map preserves the existing index title when schema.md has no usable name", async () => {
+  const d = await mkdtemp(join(tmpdir(), "kb-test-")) // again, basename != project name
+  try {
+    await seedOnePage(d)
+    // No kb/schema.md; the existing index carries the real, human-set title.
+    await writeFile(
+      join(d, "kb/wiki/index.md"),
+      "# FVG Wiki — Index\n\n> Auto-maintained by `kb:map`. Last updated: 2026-01-01\n\n---\n**Total: 0 pages**\n",
+    )
+    const { exitCode } = await runMapNoSdk(d)
+    expect(exitCode).toBe(0)
+    const index = await readFile(join(d, "kb/wiki/index.md"), "utf8")
+    expect(index.split("\n")[0]).toBe("# FVG Wiki — Index")
+    expect(index).not.toContain(d.split("/").pop()!)
+  } finally {
+    await rm(d, { recursive: true, force: true })
+  }
+})

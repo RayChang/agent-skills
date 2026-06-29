@@ -132,6 +132,7 @@ export function resolveSummary(
 async function buildIndex(
   pages: PageInfo[],
   preserved: Map<string, string>,
+  projectName: string,
 ): Promise<string> {
   const categories = await discoverCategories()
   const byCategory = new Map<string, PageInfo[]>()
@@ -151,7 +152,7 @@ async function buildIndex(
   }
 
   const lines = [
-    `# ${detectProjectName()} Wiki — Index`,
+    `# ${projectName} Wiki — Index`,
     "",
     `> Auto-maintained by \`kb:map\`. Last updated: ${todayDate()}`,
     "",
@@ -201,14 +202,36 @@ async function buildIndex(
   return lines.join("\n")
 }
 
-function detectProjectName(): string {
-  // Read from kb/schema.md title if possible, else fall back to directory name
-  try {
-    const { basename } = require("path")
-    return basename(process.cwd())
-  } catch {
-    return "Project"
-  }
+// Wiki display name. `# <name> Knowledge Base — Schema` is what Init writes into
+// kb/schema.md (it substitutes {{PROJECT_NAME}}); `# <name> Wiki — Index` is the title
+// line map itself emits. Both use an em-dash, but accept a hyphen too for hand-edits.
+const SCHEMA_TITLE = /^#\s+(.+?)\s+Knowledge Base\s+[—-]/m
+const INDEX_TITLE = /^#\s+(.+?)\s+Wiki\s+[—-]\s+Index\b/m
+
+function usableName(raw: string | undefined): string | null {
+  const name = raw?.trim()
+  // Reject empty and an unsubstituted template placeholder.
+  if (!name || name.includes("{{") || name.includes("}}")) return null
+  return name
+}
+
+/**
+ * Resolve the wiki's display name WITHOUT ever using the cwd basename — that is the
+ * worktree directory name inside `.worktrees/<name>/`, which would clobber the real title.
+ * Precedence:
+ *   1. kb/schema.md title — `# <name> Knowledge Base — Schema` (Init substitutes the name)
+ *   2. preserve the existing index.md title — `# <name> Wiki — Index`
+ *   3. neutral "Project" fallback (first run, no schema name, no prior index)
+ */
+export function resolveProjectName(
+  schemaContent: string | null,
+  indexContent: string | null,
+): string {
+  const fromSchema = usableName(schemaContent?.match(SCHEMA_TITLE)?.[1])
+  if (fromSchema) return fromSchema
+  const fromIndex = usableName(indexContent?.match(INDEX_TITLE)?.[1])
+  if (fromIndex) return fromIndex
+  return "Project"
 }
 
 // ─── MOC Builder ──────────────────────────────────────────
@@ -344,11 +367,17 @@ async function main() {
   // overwrite it, so a rebuild reuses each page's curated summary verbatim instead of
   // re-flattening it from the page body. --regen-summaries opts out (re-extract all);
   // a first run with no index.md naturally yields an empty map (extract all).
+  const existingIndex = existsSync(config.kb.index) ? await Bun.file(config.kb.index).text() : null
   const preserved =
-    !regenSummaries && existsSync(config.kb.index)
-      ? parseIndexSummaries(await Bun.file(config.kb.index).text())
-      : new Map<string, string>()
+    !regenSummaries && existingIndex ? parseIndexSummaries(existingIndex) : new Map<string, string>()
   if (regenSummaries) console.log("--regen-summaries: re-extracting every summary from page bodies\n")
+
+  // Wiki title comes from kb/schema.md (or the preserved index title) — never the cwd
+  // basename, which inside .worktrees/<name>/ would be the worktree name.
+  const schemaContent = existsSync(config.kb.schema)
+    ? await Bun.file(config.kb.schema).text()
+    : null
+  const projectName = resolveProjectName(schemaContent, existingIndex)
 
   // Include summaries/ so the index's Sources section can be built
   const rawPages = await readAllWikiPages({ includeSummaries: true })
@@ -358,7 +387,7 @@ async function main() {
 
   // Rebuild index.md
   process.stdout.write("Rebuilding index.md...")
-  const indexContent = await buildIndex(pages, preserved)
+  const indexContent = await buildIndex(pages, preserved, projectName)
   await Bun.write(config.kb.index, indexContent + "\n")
   console.log(" done")
 
