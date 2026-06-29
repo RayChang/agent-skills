@@ -220,3 +220,65 @@ test("map preserves the existing index title when schema.md has no usable name",
     await rm(d, { recursive: true, force: true })
   }
 })
+
+// ─── Regression: index/MOC entries sort by slug (the displayed key), not title ──
+// The index shows pages by `[[slug]]`, so a title-keyed sort scrambles the column with
+// mixed EN/ZH titles. These pages are arranged so slug order (alpha < middle < zeta) is
+// the REVERSE/scramble of title order ("Apple…" < "Zebra…" < CJK), proving the sort key.
+
+async function seedScrambledCategory(d: string): Promise<void> {
+  await mkdir(join(d, "kb/wiki/concepts"), { recursive: true })
+  const page = (slug: string, title: string) =>
+    writeFile(
+      join(d, `kb/wiki/concepts/${slug}.md`),
+      `---\ntitle: ${title}\ncategory: concepts\ntags: [a]\n---\n\n# ${title}\n\nBody paragraph long enough to be the fallback summary for ${slug} here.\n`,
+    )
+  await page("alpha", "Zebra alpha page") // title sorts LAST among the Latin pair
+  await page("zeta", "Apple zeta page") // title sorts FIRST among the Latin pair
+  await page("middle", "中文 middle 標題") // CJK title — collates apart from its slug
+}
+
+function orderOf(haystack: string, needles: string[]): number[] {
+  return needles.map((n) => haystack.indexOf(n))
+}
+
+test("map sorts index entries by slug, not title (mixed EN/ZH)", async () => {
+  const d = await mkdtemp(join(tmpdir(), "kb-test-"))
+  try {
+    await seedScrambledCategory(d)
+    const { exitCode } = await runMapNoSdk(d)
+    expect(exitCode).toBe(0)
+    const index = await readFile(join(d, "kb/wiki/index.md"), "utf8")
+    const [a, m, z] = orderOf(index, [
+      "[[concepts/alpha]]",
+      "[[concepts/middle]]",
+      "[[concepts/zeta]]",
+    ])
+    expect(a).toBeGreaterThan(-1)
+    // Slug order alpha < middle < zeta — title order would put zeta (Apple) first.
+    expect(a).toBeLessThan(m)
+    expect(m).toBeLessThan(z)
+  } finally {
+    await rm(d, { recursive: true, force: true })
+  }
+})
+
+test("map sorts MOC entries by slug, not title (mixed EN/ZH)", async () => {
+  const d = await mkdtemp(join(tmpdir(), "kb-test-"))
+  try {
+    await seedScrambledCategory(d)
+    const { exitCode } = await runMapNoSdk(d)
+    expect(exitCode).toBe(0)
+    const moc = await readFile(join(d, "kb/wiki/concepts/_moc.md"), "utf8")
+    const [a, m, z] = orderOf(moc, [
+      "[[concepts/alpha|",
+      "[[concepts/middle|",
+      "[[concepts/zeta|",
+    ])
+    expect(a).toBeGreaterThan(-1)
+    expect(a).toBeLessThan(m)
+    expect(m).toBeLessThan(z)
+  } finally {
+    await rm(d, { recursive: true, force: true })
+  }
+})
