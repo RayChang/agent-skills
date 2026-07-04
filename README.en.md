@@ -6,7 +6,7 @@
 
 [![GitHub](https://img.shields.io/badge/GitHub-RayChang%2Fagent--skills-181717?logo=github)](https://github.com/RayChang/agent-skills)
 [![Claude Code](https://img.shields.io/badge/Claude-Code-D97757?logo=anthropic&logoColor=white)](https://claude.com/claude-code)
-![Skills](https://img.shields.io/badge/skills-3-blue)
+![Skills](https://img.shields.io/badge/skills-5-blue)
 ![Docs](https://img.shields.io/badge/docs-English-green)
 
 [繁體中文](./README.md) · **English**
@@ -22,6 +22,8 @@
 | [📚 `kb-wiki`](#-kb-wiki) | LLM-driven personal knowledge base (Karpathy LLM Wiki pattern) | `/kb-wiki <op>` |
 | [📝 `markitdown`](#-markitdown) | File / URL → Markdown conversion | Natural language |
 | [✅ `cove`](#-cove) | Agentic CoVe 2.0: open-book three-phase self-verification | `/cove` |
+| [🧱 `harness-init`](#-harness-init) | Project harness scaffolding (unified layout spec) | `/harness-init` |
+| [🔌 `mcp-agent`](#-mcp-agent) | Wrap a single MCP server as a project-scoped subagent (token/permission isolation) | `/mcp-agent` |
 
 ---
 
@@ -48,6 +50,8 @@ Describe what you need; Claude picks the right skill based on its description:
 | "Convert this PDF to markdown" | 📝 `markitdown` |
 | "Set up a KB for this project" | 📚 `kb-wiki` |
 | "Verify the last answer" | ✅ `cove` |
+| "Scaffold this project's harness" | 🧱 `harness-init` |
+| "Wrap the Figma MCP server as an agent" | 🔌 `mcp-agent` |
 
 ### 2️⃣ Slash command triggering
 
@@ -57,6 +61,8 @@ Type `/<skill-name>` or `/<skill-name> <operation>`:
 /kb-wiki init        # Initialize the knowledge base
 /kb-wiki ingest      # Ingest a new source
 /cove                # Verify the last response
+/harness-init        # Scaffold the project harness
+/mcp-agent           # Wrap an MCP server as a project-scoped agent
 ```
 
 > 💡 Type `/` in Claude Code to browse available skills, or run `/help` for details.
@@ -217,3 +223,66 @@ own LLM app. See `cove/reference/README.md`.
 ```bash
 npx skills add RayChang/agent-skills@cove
 ```
+
+---
+
+### 🧱 `harness-init`
+
+Scaffolds a project's harness per the [unified layout spec](./harness-init/references/layout-spec.md): AGENTS.md / CLAUDE.md routers, gated task pipeline, roadmap + lessons with their small indexes, an architecture constitution (with an enforcement debt register), and a domain-agent template.
+
+#### Highlights
+
+- **Detect before asking**: package manager, test commands, and git host are auto-detected; only unresolved facts become questions (one at a time, with a recommended default)
+- **Additive-only**: existing files are always skipped — safe for incremental adoption in existing projects; re-runs never overwrite your edits
+- **Delegates, never duplicates**: `kb/` scaffolding is owned by the `kb-wiki` skill (single-source-of-truth rule)
+- Ends with a scaffold report + a formatted machine-level facts-table row (for `~/.claude/CLAUDE.md` Project Facts)
+
+#### 📥 Install
+
+```bash
+npx skills add RayChang/agent-skills@harness-init
+```
+
+> 💡 With this repo already cloned locally, skip installation: ask the agent to "read and execute `<repo-path>/harness-init/SKILL.md`".
+
+#### 🎬 Usage
+
+Start the agent at the target project root and type `/harness-init` (or say "scaffold this project's harness"). The flow:
+
+1. **Precondition**: cwd must be a git repo root (otherwise it asks whether to `git init` first)
+2. **Auto-detect**: package manager, test/typecheck/lint commands, git host + MR tool, base branch — you won't be asked about these
+3. **Questions**: only unresolved facts, plus two that are never guessed (one at a time, with recommended defaults): commit emoji position (a commitlint config is read instead of asking) and worktree convention (inside-repo vs sibling)
+4. **Scaffold + report**: writes the skeleton (existing files are always skipped), then prints Created/Skipped lists, remaining `TODO(verify)` markers, NEXT STEPS, and a formatted Project Facts row
+
+After the report, your part:
+
+- Clear `AGENTS.md`'s `TODO(verify)` markers with **actually-run** commands (the step that turns a skeleton into a real harness)
+- Run `/kb-wiki init` if you want a KB; author the real constitution articles (the two shipped ones are proposals)
+- Paste the facts row into your machine-level config, commit the scaffold
+
+> 🔁 Re-run the same command on existing projects to fill gaps — additive-only means it's a near no-op on fully-structured projects. Until the `TODO(verify)` markers are cleared, that project's harness is not live.
+
+---
+
+### 🔌 `mcp-agent`
+
+Wraps a single MCP server as a project-scoped subagent: the server's tools, token cost, and permission surface exist only inside the dispatched agent — the main conversation and every other session carry none of it.
+
+#### Highlights
+
+- **Decision gate first**: a server that nearly every session uses gets steered to `.mcp.json` instead — wrapping it would add a dispatch hop for no isolation gain
+- **Six design rules**: one agent wraps one server; server config lives only in the agent's frontmatter; secrets only as `${ENV_VAR}` (never written to files); the `description` is the routing trigger; hard report caps (raw MCP payloads never flow back); outputs are never self-certified
+- **Mandatory smoke test**: a read-only dry run (frontmatter / connection / env, all three verified) before the agent counts as existing
+- **Audit mode**: if the target file already exists, it's checked against the design rules — report only, no changes
+
+#### 📥 Install
+
+```bash
+npx skills add RayChang/agent-skills@mcp-agent
+```
+
+#### 🎬 Usage
+
+At the target project root, say "wrap the `<server>` MCP server as an agent" (or `/mcp-agent`). Your only preparation: put the server's credential in a shell environment variable. The flow: decision gate → detect/ask (one question at a time, with recommended defaults) → generate `.claude/agents/<server>-worker.md` → smoke test → fixed-format report.
+
+> 🔑 Rotating a credential means changing the env var's value — the agent file never changes.

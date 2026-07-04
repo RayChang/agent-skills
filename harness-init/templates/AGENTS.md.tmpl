@@ -1,0 +1,32 @@
+# {{PROJECT_NAME}}
+
+<!-- Project facts canon. Tool-agnostic: Claude, Codex, Gemini all read this.
+     BUDGET: this file + CLAUDE.md + .claude/rules/* ≤ 8 KB total (layout-spec rule 1).
+     Facts only — knowledge goes to kb/, law goes to docs/constitution/. -->
+
+{{PROJECT_NAME}} — TODO(verify): one sentence, what this project is and for whom.
+
+## Stack
+
+- {{STACK}}
+- Package manager: {{PKG_MANAGER}} (never substitute another)
+- Git: {{GIT_HOST}}, MR/PR via `{{MR_TOOL}}`, base branch `{{BASE_BRANCH}}`
+
+## Commands (verified, not guessed)
+
+- Install: `{{PKG_MANAGER}} install`
+- Test: `{{TEST_CMD}}`
+- Typecheck: `{{TYPECHECK_CMD}}`
+- Lint: `{{LINT_CMD}}`
+
+## Conventions
+
+- Commits: Conventional Commits + gitmoji, emoji {{EMOJI_POSITION}} the type
+- Feature work in a worktree ({{WORKTREE_CONVENTION}}), never on `{{BASE_BRANCH}}`
+- Every build task goes through the gated pipeline: `tasks/workflow.md` (entry: `/task`)
+- Lessons: `tasks/lessons.md` via `tasks/lessons.index.md` — index first, never broad-read
+
+## Gotchas
+
+<!-- Only hard-won, non-derivable facts. One line each. Delete this comment. -->
+- TODO(verify): add the first real gotcha when it is discovered, not before.

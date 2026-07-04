@@ -7,7 +7,7 @@
 [![GitHub](https://img.shields.io/badge/GitHub-RayChang%2Fagent--skills-181717?logo=github)](https://github.com/RayChang/agent-skills)
 [![Claude Code](https://img.shields.io/badge/Claude-Code-D97757?logo=anthropic&logoColor=white)](https://claude.com/claude-code)
 [![Gemini CLI](https://img.shields.io/badge/Gemini-CLI-4285F4?logo=google-gemini&logoColor=white)](https://github.com/google/gemini-cli)
-![Skills](https://img.shields.io/badge/skills-3-blue)
+![Skills](https://img.shields.io/badge/skills-5-blue)
 ![Docs](https://img.shields.io/badge/docs-繁體中文-green)
 
 **繁體中文** · [English](./README.en.md)
@@ -23,6 +23,8 @@
 | [📚 `kb-wiki`](#-kb-wiki) | LLM 驅動的個人知識庫（Karpathy LLM Wiki pattern） | `/kb-wiki <op>` |
 | [📝 `markitdown`](#-markitdown) | 檔案／URL → Markdown 轉換 | 自然語言 |
 | [✅ `cove`](#-cove) | Agentic CoVe 2.0：開卷三階段自我驗證 | `/cove` |
+| [🧱 `harness-init`](#-harness-init) | 專案 harness 骨架落地（統一目錄規範） | `/harness-init` |
+| [🔌 `mcp-agent`](#-mcp-agent) | 把單一 MCP server 封裝成專案級 subagent（token／權限隔離） | `/mcp-agent` |
 
 ---
 
@@ -49,6 +51,8 @@ Skills 可透過兩種方式觸發：
 | 「把這份 PDF 轉成 markdown」 | 📝 `markitdown` |
 | 「幫這個專案建立 KB」 | 📚 `kb-wiki` |
 | 「對剛剛的回答做驗證」 | ✅ `cove` |
+| 「幫這個專案建立 harness 骨架」 | 🧱 `harness-init` |
+| 「把 Figma MCP 包成一個 agent」 | 🔌 `mcp-agent` |
 
 ### 2️⃣ Slash command 觸發
 
@@ -58,6 +62,8 @@ Skills 可透過兩種方式觸發：
 /kb-wiki init        # 初始化知識庫
 /kb-wiki ingest      # 錄入新來源
 /cove                # 驗證上一則回答
+/harness-init        # 落地專案 harness 骨架
+/mcp-agent           # 封裝 MCP server 成專案級 agent
 ```
 
 > 💡 在 Agent 中輸入 `/` 可查看所有可用 skill，或執行 `/help` 查看說明。
@@ -203,3 +209,65 @@ markitdown 會執行外部工具(`uvx`/PyPI、選用容器)並轉換**未受信�
 ```bash
 npx skills add RayChang/agent-skills@cove
 ```
+---
+
+### 🧱 `harness-init`
+
+依[統一目錄規範](./harness-init/references/layout-spec.md)為專案落地 harness 骨架：AGENTS.md／CLAUDE.md 路由、gated task pipeline、roadmap＋lessons 雙索引、架構憲法（含 enforcement 債務表）、domain agent 範本。
+
+#### 特性
+
+- **先偵測後提問**：套件管理器、測試指令、git host 自動偵測，缺的才問（一次一題附建議預設）
+- **Additive-only**：既有檔案一律跳過——可安全用於舊專案的漸進補洞，re-run 不會覆蓋你改過的東西
+- **委派不重複**：`kb/` 骨架委派給 `kb-wiki` skill（單一真源原則）
+- 結尾輸出落地報告＋機器層事實表列（供貼進 `~/.claude/CLAUDE.md` 的 Project Facts）
+
+#### 📥 安裝
+
+```bash
+npx skills add RayChang/agent-skills@harness-init
+```
+
+> 💡 本機已 clone 此 repo 時可免安裝：直接請 Agent「讀取並執行 `<repo路徑>/harness-init/SKILL.md`」。
+
+#### 🎬 使用
+
+在目標專案根目錄啟動 Agent，打 `/harness-init`（或說「幫這個專案建立 harness 骨架」）。流程：
+
+1. **確認**：cwd 必須是 git repo 根目錄（不是會先問要不要 `git init`）
+2. **自動偵測**：套件管理器、測試／typecheck／lint 指令、git host 與 MR 工具、基底分支——這些不會問你
+3. **提問**：只問偵測不到的，外加兩題永不猜的（一次一題、附建議預設）：commit emoji 位置（repo 有 commitlint 會直接讀）、worktree 慣例（repo 內或同層）
+4. **落地＋報告**：建骨架（既有檔案一律跳過）、印出 Created／Skipped 清單、殘留 `TODO(verify)` 位置、NEXT STEPS 與 Project Facts 表列
+
+報告出來後輪到你：
+
+- 用**實跑過**的指令清掉 `AGENTS.md` 的 `TODO(verify)`（骨架 → 真 harness 的關鍵一步）
+- 需要 KB 就跑 `/kb-wiki init`；親自審定憲法條文（模板附的兩條只是提案）
+- 把 Facts 表列貼進機器層設定、commit 骨架
+
+> 🔁 舊專案補洞用同一句話——additive-only 只補缺的，在結構完整的專案上跑近乎 no-op。`TODO(verify)` 未清完前，該專案的 harness 不算上線。
+
+---
+
+### 🔌 `mcp-agent`
+
+把單一 MCP server 封裝成專案級 subagent：server 的工具、token 成本與權限半徑只存在於被派工的 agent 裡，主對話與其他 session 完全不揹。
+
+#### 特性
+
+- **先過決策閘**：幾乎每個 session 都用的 server 會被勸退改走 `.mcp.json`——包裝只多一跳、沒有隔離收益
+- **六條設計律**：一個 agent 只包一個 server、設定只住 agent frontmatter、secrets 一律 `${ENV_VAR}` 不落檔、description 即路由觸發器、回報硬上限（原始 MCP payload 不回流）、產出不自驗
+- **強制煙霧測試**：建檔後先派一次唯讀空跑（frontmatter／連線／env 三驗），PASS 才算存在
+- **Audit 模式**：目標檔已存在時改為按設計律體檢，只報告不改動
+
+#### 📥 安裝
+
+```bash
+npx skills add RayChang/agent-skills@mcp-agent
+```
+
+#### 🎬 使用
+
+在目標專案根目錄說「把 `<server>` MCP 包成 agent」（或 `/mcp-agent`）。你只需準備一件事：把 server 的認證放進 shell 環境變數。流程：決策閘 → 偵測／提問（一次一題附建議預設）→ 產出 `.claude/agents/<server>-worker.md` → 煙霧測試 → 固定格式報告。
+
+> 🔑 換金鑰時只改環境變數的值，agent 檔永遠不用動。

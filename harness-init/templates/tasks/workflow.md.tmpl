@@ -1,0 +1,40 @@
+# {{PROJECT_NAME}} — Development Workflow (mandatory)
+
+> The gated pipeline every new build task goes through. This file is the single source
+> of truth; `/task` executes it. Exempt: pure questions, doc-only edits, trivial config.
+
+## Pipeline — 7 steps, 2 human gates
+
+Artifacts live under `tasks/<task-id>/` (`<task-id>` = roadmap id + slug). All steps
+run **inside the worktree** created in step 0.
+
+| # | Step | How | Output | Gate |
+|---|------|-----|--------|------|
+| 0 | Branch + worktree | `git worktree add {{WORKTREE_PATH}}/<task-id> -b feat/<task-id> {{BASE_BRANCH}}`; then `{{PKG_MANAGER}} install` inside it | worktree ready | — |
+| 1 | Spec | interview loop (below) | `tasks/<task-id>/spec.md` | — |
+| 2 | **✋ Gate 1** | (human) | — | hard stop — present spec, wait for explicit approval |
+| 3 | Plan | multi-task plan doc: per-task exact file paths, interfaces between tasks (exact names/signatures), test-first steps, ZERO placeholders ("TBD"/"similar to task N" are plan failures). A machine-level plan template, if you keep one, overrides this inline summary | `tasks/<task-id>/plan.md` | — |
+| 4 | **✋ Gate 2** | (human) | approval + implementation mode | hard stop — wait for approval AND the mode: `subagent` / `inline` |
+| 5 | Implement (chosen mode) | subagent mode: dispatch with goal+context, BINARY acceptance criteria, and a capped report format; verification by a FRESH context (re-run tests / re-read the diff), never by the implementer | code; on green, write `tasks/<task-id>/.needs-closeout` | done only when `{{TEST_CMD}}` + `{{TYPECHECK_CMD}}` + `{{LINT_CMD}}` are clean |
+| 6 | Close out | update `roadmap.md` (mark `[x]`, date, how verified; discovered work → Backlog) + `lessons.md` + refresh both indexes; `rm` the marker | — | — |
+| 7 | Integrate | green suite → push → `{{MR_TOOL}}` MR/PR targeting `{{BASE_BRANCH}}` → after merge, remove worktree + delete local branch | merged | — |
+
+## Spec drafting (step 1)
+
+Converge through a short interview: problem · goals / non-goals · constraints ·
+**binary** acceptance criteria · open questions. Ask ONE question at a time with a
+recommended default; stop when the user has no further corrections.
+
+## Rules
+
+- The two ✋ gates are hard stops — the user must explicitly say OK. Gate 2 also picks
+  the implementation mode; no silent default.
+- Implementation follows the approved plan. Scope creep → log in roadmap Backlog, do
+  not silently expand.
+- The implementer never verifies its own work — a separate fresh context re-runs the
+  tests / re-reads the diff and issues a binary PASS/FAIL.
+
+<!-- Optional hardening (adopt as the project matures — delete this comment):
+     · add a spec/plan verification loop between drafting and each gate (e.g. the cove
+       skill, if installed) · add a Stop hook that blocks turn-end while a
+       .needs-closeout marker exists (see alibi's closeout-gate for a reference) -->
