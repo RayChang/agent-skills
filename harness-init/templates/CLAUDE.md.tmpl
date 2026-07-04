@@ -1,0 +1,19 @@
+<!-- Thin Claude router — routing only, content lives elsewhere (layout-spec rule 1&3). -->
+
+@AGENTS.md
+
+## Routing (read on demand, never preemptively)
+
+| Need | Go to |
+|---|---|
+| Build/change any app code | `tasks/workflow.md` — MANDATORY gated pipeline, entry `/task <id\|description>` |
+| Build status / what's next | `tasks/roadmap.index.md` (never broad-read roadmap.md — `rg` by task ID) |
+| Past failures on a topic | `tasks/lessons.index.md` → `rg` lessons.md by keyword |
+| Design decisions / domain knowledge | `kb/wiki/index.md` (if kb/ exists) |
+| Architectural law | `docs/constitution/constitution.md` (human-owned — propose, never edit) |
+| Dispatch/verification/judgment (HOW to work) | machine level — your global Claude config; referenced, never copied into this repo |
+
+## Code exploration
+
+For source files, prefer structured retrieval (a code-graph MCP / LSP, if available)
+before Read/grep, following your machine-level tool routing.

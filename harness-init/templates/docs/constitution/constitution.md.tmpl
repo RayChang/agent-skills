@@ -1,0 +1,28 @@
+# {{PROJECT_NAME}} — Architecture Constitution
+
+> Scope: code architecture ONLY (coupling, layering, purity). Domain invariants live in
+> `kb/` + code + tests, not here. Truth hierarchy: **Constitution ▸ code ▸ docs** —
+> conflict means fix the code (or amend), never edit docs to match bad code.
+> **A violation is a violation even if no checker is wired yet.** Machines only flag,
+> never self-resolve. Enforcement mechanisms + wiring status live in
+> `constitution-enforcement.md`; changing a mechanism is NOT an amendment.
+
+<!-- The two articles below are PROPOSALS shipped by the template because they apply to
+     most layered codebases. Amend, replace, or delete them — do not treat them as
+     defaults that silently apply. Keep this table small: only invariants whose
+     violation breaks the architecture. Delete this comment when authored. -->
+
+| Article | Rule | Type |
+|---------|------|------|
+| A1 | Imports flow inward only (define this project's layers here): TODO(verify) | [D] |
+| A2 | No circular imports | [D] |
+
+Decidability legend: **[D]** machine-decidable · **[D+S]** decidable core + judgment
+boundary · **[S]** judgment only (never auto-gated).
+
+## Governance
+
+- Amending = editing this file via a **human-approved MR**. Models may propose diffs,
+  never apply them.
+- A checker that finds a conflict **only flags** — a human decides: fix the code, or amend.
+- Wiring/changing a checker touches only `constitution-enforcement.md`.

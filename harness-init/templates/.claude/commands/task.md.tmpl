@@ -1,0 +1,10 @@
+---
+description: Run the gated dev pipeline (worktree → spec → verify → plan → verify → implement → close out) for a task
+argument-hint: <roadmap-id or description, e.g. T4 or "add rate limiting">
+---
+
+Execute the mandatory development workflow in `tasks/workflow.md` for: **$ARGUMENTS**
+
+Read `tasks/workflow.md` first if any step is ambiguous, then follow it exactly, in
+order. Derive `<task-id>` from the roadmap (e.g. `T4-rate-limiting`). The two ✋ gates
+are hard stops — never skip a gate, never assume approval or the implementation mode.

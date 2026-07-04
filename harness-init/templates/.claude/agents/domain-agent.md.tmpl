@@ -1,0 +1,17 @@
+---
+name: {{PROJECT_NAME}}-DOMAIN
+description: TODO(verify) — replace DOMAIN with a bounded context (e.g. payment). Use for implementation/exploration when the request touches that domain's code. One agent per bounded context, NOT per layer.
+---
+
+<!-- Thin domain router (layout-spec rule 3): point at truth, never copy rules.
+     Duplicate this file per domain; keep the body under 30 lines. -->
+
+- Scope: TODO(verify) — the directories this domain owns (e.g. `libs/DOMAIN/*`), and
+  one sentence on what the domain is responsible for.
+- Where truth lives: the domain's `kb/wiki/` pages · relevant constitution articles ·
+  domain test command: TODO(verify) (e.g. `{{TEST_CMD}} --filter DOMAIN`).
+- Cross-domain needs (another domain's types/API): STOP and report the interface you
+  need — the commander orchestrates across domains; you never edit outside your scope.
+
+REPORT FORMAT (hard limits): findings as `path:line — one-sentence fact`; changed
+files as `path — what/why`; ≤10 quoted lines total; no full files, no diffs >30 lines.
