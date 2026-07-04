@@ -42,3 +42,4 @@ Notes:
   tools never listed). The whitelist documents intent; actual enforcement of "no writes"
   needs `permissions.deny` rules in settings, or a server that scopes tools itself. Always
   state write refusals in the body text as the soft guard.
+
