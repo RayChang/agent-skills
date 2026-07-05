@@ -96,7 +96,7 @@ When a new source is added to `raw/sources/`:
 3. Write a brief per-source summary in `wiki/summaries/` (frontmatter: `source`, optional `origin`, `ingested`, `tags`; 3–6 takeaway bullets; Key Terms; pages touched)
 4. Update `wiki/overview.md` if the source shifts the big picture
 5. Update `wiki/index.md` with new/changed pages and the new summary in the Sources section
-6. Append entry to `wiki/log.md`
+6. Append entry to the current developer's log file `wiki/log/<dev>.md` (Log Format below)
 
 ### Query
 

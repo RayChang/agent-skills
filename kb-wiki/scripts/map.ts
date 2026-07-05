@@ -363,6 +363,16 @@ async function main() {
   const deep = args.includes("--deep")
   const regenSummaries = args.includes("--regen-summaries")
 
+  // Same missing-KB guard as lint.ts: without it, a wrong-cwd run silently scaffolds
+  // a junk kb/wiki/index.md + log file (Bun.write auto-creates parent directories).
+  if (!existsSync(config.kb.wiki)) {
+    console.error(
+      `No KB found: ${config.kb.wiki} does not exist.\n` +
+        "Run from the project root of a project with an initialized KB (kb/wiki/), or initialize one first (kb-wiki Init).",
+    )
+    process.exit(1)
+  }
+
   console.log(`KB Map — ${deep ? "deep mode (with LLM)" : "structural rebuild"}...\n`)
 
   // Preserve hand-curated index one-liners: harvest the existing index.md before we

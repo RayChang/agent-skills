@@ -39,18 +39,37 @@ export async function ask(
   }
 }
 
+/**
+ * Extract and parse the JSON payload of an LLM response (optionally inside a ``` fence).
+ * Throws an actionable error instead of a raw SyntaxError: by the time parsing fails
+ * the API call has already been paid for, so the message must tell the user what came
+ * back and what to do — not just where JSON.parse choked.
+ */
+export function parseJsonResponse<T = unknown>(content: string): T {
+  let jsonStr = content.trim()
+  const fenceMatch = jsonStr.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/)
+  if (fenceMatch) jsonStr = fenceMatch[1].trim()
+
+  try {
+    return JSON.parse(jsonStr) as T
+  } catch (err) {
+    const snippet = jsonStr.slice(0, 200).replace(/\s+/g, " ")
+    throw new Error(
+      `LLM response is not valid JSON (${(err as Error).message}). ` +
+        `Response starts with: "${snippet}". The API call itself succeeded — ` +
+        "re-run the command; if this persists, adjust KB_MODEL or the prompt.",
+    )
+  }
+}
+
 export async function askJson<T = unknown>(
   prompt: string,
   options?: { system?: string; maxTokens?: number },
 ): Promise<{ data: T; inputTokens: number; outputTokens: number }> {
   const response = await ask(prompt, options)
 
-  let jsonStr = response.content.trim()
-  const fenceMatch = jsonStr.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/)
-  if (fenceMatch) jsonStr = fenceMatch[1].trim()
-
   return {
-    data: JSON.parse(jsonStr) as T,
+    data: parseJsonResponse<T>(response.content),
     inputTokens: response.inputTokens,
     outputTokens: response.outputTokens,
   }

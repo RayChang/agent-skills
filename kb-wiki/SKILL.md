@@ -188,18 +188,18 @@ To answer a question using KB content:
 
 ### Lint — Run a health check on the wiki
 
-Use the Bash tool to run the script directly (deterministic, no extra tokens):
+Use the Bash tool to run the script directly (deterministic, no extra tokens). `<skill-dir>` is this skill's own directory — the "Base directory for this skill" announced when the skill loads. Deployments differ (`.claude/skills/kb-wiki`, `.agents/skills/kb-wiki`, `~/.claude/skills/kb-wiki`), so never assume a fixed absolute path. Run from the project root:
 ```bash
-bun ~/.claude/skills/kb-wiki/scripts/lint.ts           # structural checks + injection-marker scan
-bun ~/.claude/skills/kb-wiki/scripts/lint.ts --deep    # + LLM content analysis
+bun "<skill-dir>/scripts/lint.ts"           # structural checks + injection-marker scan
+bun "<skill-dir>/scripts/lint.ts" --deep    # + LLM content analysis
 ```
 
 If Bun is unavailable (command not found), fall back to doing it manually:
 
 1. Read all pages in `kb/wiki/` and list the files in `kb/raw/sources/`
 2. Check for:
-   - **Broken links**: `[[page]]` references that don't have a corresponding file — skip links inside any log file (`log.md` or `log/*.md`) — append-only history; links legitimately rot when pages are renamed
-   - **Orphan pages**: pages with no inbound links from other pages
+   - **Broken links**: `[[page]]` references that don't have a corresponding file — skip links inside any log file (`log.md` or `log/*.md`) and inside `lint-report-*.md` files (logs are append-only history whose links legitimately rot; lint reports quote broken links verbatim and would resurrect every fixed one)
+   - **Orphan pages**: pages with no inbound links from other **content** pages — links from `index.md`, `_moc.md` files, logs, and lint reports don't count: they reference every page mechanically, which would make orphan detection vacuous
    - **Missing frontmatter**: content pages lacking YAML frontmatter or its required fields (`title`, `category`, `tags`) — `summaries/` pages use their own frontmatter and are exempt. Separately, flag at **info** level any content page missing the recommended `summary` field (a one-line standalone abstract) — info not warning, so legacy pages are nudged, not alarmed (consistent with Migrate's "don't bulk-rewrite existing pages")
    - **Empty categories**: category directories with no pages
    - **Un-ingested sources**: files in `kb/raw/sources/` with no corresponding `summaries/` page and no page citing them — the KB is silently lagging its sources
@@ -250,7 +250,7 @@ State which pages you skipped and why. Discover the set from `kb/wiki/index.md` 
 | 🅿️ not-yet-built | forward-design prescription; **not** drift |
 | ❓ unverifiable | cannot confirm from the repo (say why) |
 
-**5. Scale with parallel subagents** for a large KB — partition pages into groups, one subagent per group, each returning a drift table with `file:line` evidence. **REQUIRED SUB-SKILL** for the fan-out: superpowers:dispatching-parallel-agents.
+**5. Scale with parallel subagents** for a large KB — partition pages into groups, one subagent per group, each returning a drift table with `file:line` evidence. If the superpowers:dispatching-parallel-agents skill is installed, use it for the fan-out; otherwise dispatch the groups yourself as parallel subagents in a single message — do not stall looking for the skill.
 
 **6. Fix, then INDEPENDENTLY re-verify.** After correcting drifted pages, run a second verification pass — ideally a fresh subagent told NOT to assume your fixes are right — over the edited pages. Bump each fixed page's `updated` date and add a one-line drift-correction note at the top.
 
@@ -270,11 +270,11 @@ State which pages you skipped and why. Discover the set from `kb/wiki/index.md` 
 
 ### Map — Rebuild index, MOCs, and cross-links
 
-Use the Bash tool to run the script directly (deterministic, no extra tokens):
+Use the Bash tool to run the script directly (deterministic, no extra tokens). `<skill-dir>` = this skill's base directory, as in Lint — never a fixed absolute path. Run from the project root:
 ```bash
-bun ~/.claude/skills/kb-wiki/scripts/map.ts                    # rebuild index + MOCs (preserves curated one-liners)
-bun ~/.claude/skills/kb-wiki/scripts/map.ts --deep             # + LLM cross-link discovery
-bun ~/.claude/skills/kb-wiki/scripts/map.ts --regen-summaries  # re-extract every index/MOC summary from page bodies
+bun "<skill-dir>/scripts/map.ts"                    # rebuild index + MOCs (preserves curated one-liners)
+bun "<skill-dir>/scripts/map.ts" --deep             # + LLM cross-link discovery
+bun "<skill-dir>/scripts/map.ts" --regen-summaries  # re-extract every index/MOC summary from page bodies
 ```
 
 > **Summaries are human-owned.** By default `map` preserves each one-liner already in `index.md` verbatim — those lines are often hand-curated to be richer than a page's opening sentence, and a rebuild must never flatten them. It still adds new pages, drops vanished ones, and rebuilds counts/MOCs/Sources. Only pages new to the index (or with no prior summary) get an extracted summary. Use `--regen-summaries` to deliberately refresh stale one-liners (re-extracts all); staleness of a curated summary is otherwise a human edit, not something `map` auto-"fixes".

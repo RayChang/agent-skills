@@ -194,8 +194,14 @@ export async function appendLog(
 
 // ─── Formatting ───────────────────────────────────────────
 
+/**
+ * Local calendar date (YYYY-MM-DD) — deliberately not UTC: toISOString() gave a
+ * UTC+8 developer yesterday's date on anything logged before 08:00 local.
+ */
 export function todayDate(): string {
-  return new Date().toISOString().split("T")[0]
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
 // ─── Log routing (pure) ───────────────────────────────────

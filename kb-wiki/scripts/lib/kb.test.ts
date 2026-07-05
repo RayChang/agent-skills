@@ -139,6 +139,24 @@ test("insertNewestAtTop: appends at end when no --- separator is present", () =>
   expect(insertNewestAtTop(existing, entry)).toBe(existing + entry)
 })
 
+test("todayDate: uses the local timezone, not UTC", () => {
+  // Etc/GMT-14 (UTC+14) and Etc/GMT+12 (UTC-12) are 26h apart — their local calendar
+  // dates NEVER coincide, so this assertion is deterministic at any time of day.
+  // The old toISOString() implementation returned the UTC date in both zones.
+  const runInTz = (tz: string) => {
+    const p = Bun.spawnSync(
+      ["bun", "-e", `const { todayDate } = await import("${import.meta.dir}/kb.ts"); console.log(todayDate())`],
+      { env: { ...process.env, TZ: tz } },
+    )
+    return p.stdout.toString().trim()
+  }
+  const east = runInTz("Etc/GMT-14")
+  const west = runInTz("Etc/GMT+12")
+  expect(east).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  expect(west).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  expect(east).not.toBe(west)
+})
+
 test("formatLogEntry: renders dated action heading + bullets", () => {
   const e = formatLogEntry("map", "Rebuilt index", ["Pages indexed: 3"])
   expect(e).toMatch(/## \[\d{4}-\d{2}-\d{2}\] map \| Rebuilt index/)

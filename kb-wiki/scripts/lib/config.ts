@@ -4,6 +4,21 @@ import { readdir, stat } from "fs/promises"
 // Use process.cwd() so scripts work correctly when run from any project root
 const ROOT = process.cwd()
 
+/**
+ * Positive-integer env override with a fallback. A typo'd value previously flowed
+ * straight into the API call (Number("4k") → maxTokens: NaN → request rejected).
+ */
+export function positiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name]
+  if (raw === undefined || raw === "") return fallback
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n <= 0) {
+    console.warn(`Ignoring invalid ${name}="${raw}" — using ${fallback}`)
+    return fallback
+  }
+  return n
+}
+
 export const config = {
   root: ROOT,
   kb: {
@@ -16,7 +31,7 @@ export const config = {
   },
   ai: {
     model: process.env.KB_MODEL ?? "claude-sonnet-4-6",
-    maxTokens: Number(process.env.KB_MAX_TOKENS ?? 4096),
+    maxTokens: positiveIntEnv("KB_MAX_TOKENS", 4096),
   },
 } as const
 
@@ -35,8 +50,10 @@ export async function discoverCategories(): Promise<string[]> {
   }
 
   for (const entry of entries) {
-    // Skip meta files and known non-category directories
-    if (entry.startsWith(".") || entry === "summaries" || entry === "queries" || entry === "log") {
+    // Skip meta directories only: "summaries" is the ingest ledger, "log" the activity
+    // trail. Everything else (a queries/ dir included) is a real category — hardcoding
+    // more names here silently drops those pages from the index and MOCs.
+    if (entry.startsWith(".") || entry === "summaries" || entry === "log") {
       continue
     }
     const fullPath = resolve(config.kb.wiki, entry)
