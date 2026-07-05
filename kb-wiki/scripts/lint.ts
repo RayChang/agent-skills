@@ -277,13 +277,16 @@ export function checkUningestedSources(
 
 // ─── Security: prompt-injection / exfiltration markers ───
 
-const INJECTION_PATTERNS: Array<{ re: RegExp; label: string }> = [
+const INJECTION_PATTERNS: Array<{ re: RegExp; label: string; severity?: LintIssue["severity"] }> = [
   { re: /ignore\s+(?:all\s+)?(?:the\s+)?(?:previous|prior|above|earlier)\s+(?:instructions?|prompts?|directions?|context)/i, label: "instruction-override" },
   { re: /disregard\s+(?:all\s+)?(?:the\s+)?(?:previous|prior|above|earlier)\b/i, label: "instruction-override" },
   { re: /forget\s+(?:everything|all)\s+(?:you|above|previous|prior)/i, label: "instruction-override" },
   { re: /you\s+are\s+now\s+(?:a|an|the|in)\b/i, label: "role-reassignment" },
   { re: /\b(?:new|updated|revised)\s+(?:system\s+)?(?:instructions?|directives?|rules?)\s*:/i, label: "instruction-injection" },
-  { re: /\bsystem\s+prompt\b/i, label: "system-prompt-reference" },
+  // A bare "system prompt" mention is everyday vocabulary in any KB documenting
+  // LLM/agent work — at warning level it drowned real signals. The dangerous form
+  // ("reveal your system prompt") is covered by the exfiltration pattern below.
+  { re: /\bsystem\s+prompt\b/i, label: "system-prompt-reference", severity: "info" },
   { re: /(?:curl|wget)\b[^\n]*\|\s*(?:sudo\s+)?(?:ba)?sh\b/i, label: "pipe-to-shell" },
   { re: /\b(?:reveal|print|show|expose|leak|exfiltrate|send)\s+(?:me\s+)?(?:your|the|all)\s+(?:system\s+prompt|instructions?|api[_\s-]?keys?|secrets?|tokens?|passwords?|credentials?|env(?:ironment)?\s+(?:variables?|vars?))/i, label: "exfiltration" },
 ]
@@ -291,11 +294,12 @@ const INJECTION_PATTERNS: Array<{ re: RegExp; label: string }> = [
 /**
  * Scan untrusted raw sources and LLM-authored wiki pages for prompt-injection and
  * exfiltration markers. Raw sources are the untrusted ingestion boundary; wiki pages
- * can absorb poisoned content through the ingest→query→map feedback loop. Reported as
- * warnings for human review — a hit may be legitimate security documentation OR an
- * actual poisoning attempt, so it is surfaced, never auto-resolved.
+ * can absorb poisoned content through the ingest→query→map feedback loop. Reported for
+ * human review — warning severity, except patterns marked info (benign-vocabulary
+ * overlap). A hit may be legitimate security documentation OR an actual poisoning
+ * attempt, so it is surfaced, never auto-resolved.
  */
-function checkInjectionMarkers(
+export function checkInjectionMarkers(
   pages: Array<{ relativePath: string; content: string }>,
   rawSources: Array<{ relativePath: string; content: string }>,
 ): LintIssue[] {
@@ -305,14 +309,14 @@ function checkInjectionMarkers(
     // Lint reports quote injection strings to describe findings — don't flag them recursively.
     if (relativePath.match(/^lint-report-/)) return
     const seen = new Set<string>()
-    for (const { re, label } of INJECTION_PATTERNS) {
+    for (const { re, label, severity } of INJECTION_PATTERNS) {
       if (seen.has(label)) continue
       const m = content.match(re)
       if (!m) continue
       seen.add(label)
       const snippet = m[0].replace(/\s+/g, " ").trim().slice(0, 60)
       issues.push({
-        severity: "warning",
+        severity: severity ?? "warning",
         category: "injection",
         message: `Possible ${label} marker — "${snippet}" — human review (legit docs or poisoning?)`,
         file,
