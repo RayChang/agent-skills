@@ -35,8 +35,10 @@ export async function discoverCategories(): Promise<string[]> {
   }
 
   for (const entry of entries) {
-    // Skip meta files and known non-category directories
-    if (entry.startsWith(".") || entry === "summaries" || entry === "queries" || entry === "log") {
+    // Skip meta directories only: "summaries" is the ingest ledger, "log" the activity
+    // trail. Everything else (a queries/ dir included) is a real category — hardcoding
+    // more names here silently drops those pages from the index and MOCs.
+    if (entry.startsWith(".") || entry === "summaries" || entry === "log") {
       continue
     }
     const fullPath = resolve(config.kb.wiki, entry)

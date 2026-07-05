@@ -202,6 +202,29 @@ test("map titles the index from kb/schema.md, not the cwd/worktree basename", as
   }
 })
 
+// ─── Regression: a queries/ directory is a real category, not a skipped one ──
+// discoverCategories used to hardcode-skip "queries", so its pages were walked
+// ("Found N wiki pages") but silently dropped from the index, MOCs, and the total.
+
+test("map indexes a queries/ category instead of silently dropping its pages", async () => {
+  const d = await mkdtemp(join(tmpdir(), "kb-test-"))
+  try {
+    await mkdir(join(d, "kb/wiki/queries"), { recursive: true })
+    await writeFile(
+      join(d, "kb/wiki/queries/some-report.md"),
+      `---\ntitle: Some Report\ncategory: queries\ntags: [q]\n---\n\n# Some Report\n\nA filed-back query report page with a sufficiently long first paragraph here.\n`,
+    )
+    const { exitCode } = await runMapNoSdk(d)
+    expect(exitCode).toBe(0)
+    const index = await readFile(join(d, "kb/wiki/index.md"), "utf8")
+    expect(index).toContain("## Queries (1)")
+    expect(index).toContain("[[queries/some-report]]")
+    expect(index).toContain("**Total: 1 pages**")
+  } finally {
+    await rm(d, { recursive: true, force: true })
+  }
+})
+
 test("map preserves the existing index title when schema.md has no usable name", async () => {
   const d = await mkdtemp(join(tmpdir(), "kb-test-")) // again, basename != project name
   try {
