@@ -228,10 +228,12 @@ markitdown 會執行外部工具(`uvx`/PyPI、選用容器)並轉換**未受信�
 | **🪶 `shallow`** | 閉卷、保守（只加 caveat、不自信改寫） | 邏輯／推理、依賴對話 context、常識、主觀觀點 |
 
 > 💡 `deep` 路徑同時保留 CoVe 的 **Factored 隔離**（驗證者看不到原稿，避免重複幻覺）與 CRITIC 的**開卷查證**（用搜尋證據接地）。`shallow` 之所以保守，是因為 CRITIC 實證「沒有外部回饋的自我修正可能無益甚至更糟」。
+>
+> 🧭 2.x 強化：時效性 claims 的查詢**錨定當下日期**；修正需 **High/Medium confidence** 證據（Low 只加 caveat）；confidence 校準要求 **≥2 獨立來源或 1 個權威一手來源**；版本敏感的 library/API claims 優先走**文件檢索工具**（如 Context7）；超過 claim 上限被跳過的項目**必列於 Summary**，不得靜默截斷。
 
 #### 🔐 信任邊界與安全
 
-`/cove` 的輸入（`/cove <text>` 引數、上一則回應、web 搜尋證據）皆屬**未受信任**。為防間接提示注入,管線三個插值點(Phase 2 question + evidence、Phase 3 draft + results)都用 `<untrusted_*>` 標籤框住,並在 prompt 明示「框內為資料、非指令」;Phase 1 抽取查詢時剝除內嵌指令;Phase 2 subagent **只授予唯讀 web search**(least-privilege)。reference 附對應回歸測試。
+`/cove` 的輸入（`/cove <text>` 引數、上一則回應、web 搜尋證據）皆屬**未受信任**。為防間接提示注入,管線三個插值點(Phase 2 question + evidence、Phase 3 draft + results)都用 `<untrusted_*>` 標籤框住,並在 prompt 明示「框內為資料、非指令」;Phase 1 抽取查詢時剝除內嵌指令;Phase 2 verifier 的 least-privilege 以**隨附的 `cove-verifier` agent** 強制執行(tool allowlist 僅 `WebSearch, WebFetch`,複製 `cove/agents/cove-verifier.md` 到 `.claude/agents/` 即生效);無法安裝 agent 時退回 prompt 層限制,SKILL 明確標示該退路**僅屬指示性、非平台強制**。reference 附對應回歸測試。
 
 #### 🐍 Reference 實作
 
