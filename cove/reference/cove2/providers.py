@@ -9,7 +9,6 @@ running live -- provider APIs change and must not be relied on from memory.
 """
 from __future__ import annotations
 
-import asyncio
 from typing import Optional, Protocol, runtime_checkable
 
 from .schema import SearchResult
@@ -27,7 +26,8 @@ class SearchProvider(Protocol):
 
 
 class TavilySearch:
-    """SearchProvider backed by Tavily (returns LLM-ready text + sources).
+    """SearchProvider backed by Tavily's native async client (returns LLM-ready
+    text + sources); no thread hop per search.
 
     To swap providers, implement ``async search(query) -> list[SearchResult]``:
       - Google CSE: call the Custom Search JSON API, map ``items[].{title,snippet,link}``.
@@ -39,11 +39,11 @@ class TavilySearch:
         if client is not None:
             self._client = client
         else:
-            from tavily import TavilyClient  # lazy import
-            self._client = TavilyClient(api_key=api_key)
+            from tavily import AsyncTavilyClient  # lazy import
+            self._client = AsyncTavilyClient(api_key=api_key)
 
     async def search(self, query: str) -> list[SearchResult]:
-        raw = await asyncio.to_thread(self._client.search, query, max_results=self._max_results)
+        raw = await self._client.search(query, max_results=self._max_results)
         return [
             SearchResult(title=r.get("title", ""), snippet=r.get("content", ""), url=r.get("url", ""))
             for r in raw.get("results", [])
@@ -57,7 +57,7 @@ class AnthropicLLM:
     against current docs via context7 before live use.
     """
 
-    def __init__(self, *, model: str = "claude-opus-4-8", api_key: Optional[str] = None,
+    def __init__(self, *, model: str = "claude-sonnet-5", api_key: Optional[str] = None,
                  max_tokens: int = 4096, client=None):  # verify current model IDs via context7 before live use
         self.model = model
         self.max_tokens = max_tokens
