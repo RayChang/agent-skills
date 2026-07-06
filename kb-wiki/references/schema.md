@@ -42,6 +42,9 @@ updated: YYYY-MM-DD
 
 Content here. Use [[wiki-links]] for cross-references.
 Use `→ raw/sources/filename.md` to cite raw sources inline.
+Quote source text verbatim only inside a blockquote with attribution
+(`> quoted text — raw/sources/filename.md`) — quoted material stays visually
+distinct from the page's own synthesis (boundary marker; see Trust Tiers).
 
 ## See Also
 - [[category/related-page]]

@@ -1,9 +1,13 @@
 import { test, expect } from "bun:test"
+import { mkdtemp, writeFile, readdir, rm } from "fs/promises"
+import { tmpdir } from "os"
+import { join } from "path"
 import {
   checkBrokenLinks,
   checkOrphanPages,
   checkUningestedSources,
   checkInjectionMarkers,
+  pruneOldReports,
 } from "./lint"
 
 type Page = { relativePath: string; content: string }
@@ -125,4 +129,42 @@ test("checkInjectionMarkers: pipe-to-shell and exfiltration stay warnings", () =
   )
   expect(issues).toHaveLength(2)
   for (const issue of issues) expect(issue.severity).toBe("warning")
+})
+
+// ─── report retention ─────────────────────────────────────
+
+test("pruneOldReports: keeps the newest 3, ignores non-report files", async () => {
+  const d = await mkdtemp(join(tmpdir(), "kbprune-"))
+  try {
+    for (const date of ["2026-07-01", "2026-07-02", "2026-07-03", "2026-07-04", "2026-07-05"]) {
+      await writeFile(join(d, `lint-report-${date}.md`), "report")
+    }
+    await writeFile(join(d, "lint-report-notes.md"), "decoy — no date stamp, not a report")
+    await writeFile(join(d, "overview.md"), "content page")
+
+    const pruned = await pruneOldReports(d)
+    expect(pruned.sort()).toEqual(["lint-report-2026-07-01.md", "lint-report-2026-07-02.md"])
+
+    const left = (await readdir(d)).sort()
+    expect(left.filter((n) => /^lint-report-\d{4}-\d{2}-\d{2}\.md$/.test(n))).toEqual([
+      "lint-report-2026-07-03.md",
+      "lint-report-2026-07-04.md",
+      "lint-report-2026-07-05.md",
+    ])
+    expect(left).toContain("lint-report-notes.md")
+    expect(left).toContain("overview.md")
+  } finally {
+    await rm(d, { recursive: true, force: true })
+  }
+})
+
+test("pruneOldReports: no-op at or under the keep limit and on a missing dir", async () => {
+  const d = await mkdtemp(join(tmpdir(), "kbprune-"))
+  try {
+    await writeFile(join(d, "lint-report-2026-07-05.md"), "report")
+    expect(await pruneOldReports(d)).toEqual([])
+    expect(await pruneOldReports(join(d, "nonexistent"))).toEqual([])
+  } finally {
+    await rm(d, { recursive: true, force: true })
+  }
 })
