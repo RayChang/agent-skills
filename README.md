@@ -34,7 +34,7 @@
 npx skills add RayChang/agent-skills@<skill-name>
 ```
 
-> 安裝後 skill 會放在 `~/.claude/skills/` (Claude) 或 `~/.gemini/extensions/` (Gemini) 下，Agent 啟動時會自動載入。
+> 在專案目錄內執行時，skill 實體會放在專案的 `.agents/skills/<skill-name>/`，並在 `.claude/skills/` 建立 symlink（Claude Code 啟動時自動載入）。加上 global 旗標則安裝到 user-level 的 `~/.agents/skills/`。**更新已安裝的 skill = 在該專案重跑同一條安裝指令**（skill 是複製部署，改 repo 不會自動生效）。
 
 ---
 
@@ -93,13 +93,40 @@ Skills 可透過兩種方式觸發：
 | `init` | 初始化 KB，建立目錄結構與 schema |
 | `ingest` | 處理新的來源文件：更新 wiki 頁面 + 寫入逐源摘要（`summaries/`，ingest 帳本） |
 | `query` | 以 wiki 內容回答問題（事實／推論分開標示），答案歸檔回 wiki |
-| `lint` | 健康檢查：斷鏈、孤立頁面、矛盾內容、未編譯來源、**prompt-injection 標記掃描**（raw 與 wiki 皆掃，列為 human-review） |
+| `lint` | 健康檢查：斷鏈、孤立頁面、矛盾內容、未編譯來源、**prompt-injection 標記掃描**（raw 與 wiki 皆掃，列為 human-review）；報告自動保留最近 3 份 |
 | `map` | 重建 index、MOC 及交叉連結 |
 | `verify` | 對照實際 codebase 檢查 wiki 是否漂移（drift audit） |
 | `capture` | 在里程碑結束後萃取設計決策與教訓 |
 | `migrate` | 將舊版 KB 升級到現行 schema（schema 重建保留客製、回填摘要帳本、補 overview） |
 
 > 💡 **`verify` ≠ `lint`**：`lint` 檢查 wiki 的*內部*健康（斷鏈、孤立、矛盾）；`verify` 檢查*外部*校準——頁面是否仍與它描述的程式碼一致。Forward-design（尚未實作的設計）頁面不算漂移，只有頁面宣稱的「現況」才會被檢查；修正後一律以獨立 pass 重新驗證。
+
+#### ⚙️ 腳本直跑（lint / map）
+
+`lint` 與 `map` 附確定性腳本（需 [Bun](https://bun.sh)），agent 會直接執行、不燒 LLM token。`<skill-dir>` 是 skill 的安裝目錄（skill 載入時顯示的 "Base directory"，依部署方式為 `.claude/skills/kb-wiki`、`.agents/skills/kb-wiki` 等）。一律從**專案根目錄**執行：
+
+```bash
+bun "<skill-dir>/scripts/lint.ts"                   # 結構檢查 + injection 標記掃描
+bun "<skill-dir>/scripts/lint.ts" --deep            # + LLM 內容分析（矛盾、過期、缺頁）
+bun "<skill-dir>/scripts/map.ts"                    # 重建 index + MOC（保留人工調整的一行摘要）
+bun "<skill-dir>/scripts/map.ts" --deep             # + LLM 交叉連結探索
+bun "<skill-dir>/scripts/map.ts" --regen-summaries  # 重新從頁面內文萃取所有摘要
+```
+
+行為要點：
+
+- 預設模式**零 SDK 依賴** —— 只有 `--deep` 需要 `@anthropic-ai/sdk`；缺套件時結構部分照常完成並給出可行動訊息
+- 在沒有 `kb/wiki/` 的目錄執行會直接拒絕（exit 1），不會憑空建立假 KB 骨架
+- lint 報告寫入 `kb/wiki/lint-report-<日期>.md`，自動只保留最近 3 份
+- `map` 預設保留 `index.md` 既有的一行摘要（視為人工調校內容），只有新頁面才萃取；要全部重萃取需明確下 `--regen-summaries`
+
+環境變數（皆選填）：
+
+| 變數 | 用途 | 預設 |
+|---|---|---|
+| `KB_DEV` | 活動日誌的開發者代號（寫入 `kb/wiki/log/<dev>.md`） | `git config user.name` 的 slug |
+| `KB_MODEL` | `--deep` 使用的模型 | `claude-sonnet-4-6` |
+| `KB_MAX_TOKENS` | `--deep` 回應上限（正整數，非法值退回預設） | `4096` |
 
 #### 🔐 信任邊界與安全
 
@@ -116,6 +143,12 @@ KB 會錄入**未受信任**的來源並執行 shell 指令，因此每個操作
 npx skills add RayChang/agent-skills@kb-wiki
 ```
 
+**更新既有安裝**：skill 是複製部署，改了這個 repo 不會影響已安裝的專案。到各專案重跑安裝指令即可拉最新版（user-level 全域那份需用 CLI 的 global 變體，專案內執行不會更新到它）：
+
+```bash
+bunx skills add https://github.com/raychang/agent-skills --skill kb-wiki
+```
+
 #### 🎬 首次使用（init）
 
 1. `cd` 進入要建立知識庫的專案目錄
@@ -125,7 +158,7 @@ npx skills add RayChang/agent-skills@kb-wiki
    - 📁 `kb/raw/sources/`、`kb/raw/assets/`（原始素材層，不可變動）
    - 📁 `kb/wiki/{categories}/`、`kb/wiki/summaries/`（LLM 維護的 wiki 層；summaries 為逐源摘要）
    - 📄 `kb/schema.md`（本專案的 KB 規則）
-   - 📄 `kb/wiki/index.md`、`kb/wiki/log.md`、`kb/wiki/overview.md`（高層綜述，隨 ingest 更新）
+   - 📄 `kb/wiki/index.md`、`kb/wiki/log/<dev>.md`（每位開發者一份 append-only 活動日誌，避免合併衝突）、`kb/wiki/overview.md`（高層綜述，隨 ingest 更新）
    - 📝 在專案根的 `GEMINI.md` 或 `CLAUDE.md` 附加 `## Knowledge Base` 區塊，讓後續任何 LLM agent 進專案都能自動發現 KB（自動偵測平台適配）
 
 #### 🔄 日常流程

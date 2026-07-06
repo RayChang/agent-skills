@@ -11,6 +11,7 @@
 
 import { resolve } from "path"
 import { existsSync } from "fs"
+import { readdir, rm } from "fs/promises"
 import { config, discoverCategories } from "./lib/config"
 // NOTE: ./lib/ai (which imports @anthropic-ai/sdk) is loaded lazily inside the --deep
 // branch only — structural checks must run with zero SDK dependency (same pattern and
@@ -394,6 +395,29 @@ Return a structured report as a markdown list. For each issue include severity (
   return { issues, tokens: { input: response.inputTokens, output: response.outputTokens } }
 }
 
+// ─── Report retention ─────────────────────────────────────
+
+/**
+ * Keep only the newest `keep` lint reports; delete older ones. Reports are
+ * self-generated artifacts (not knowledge content) that otherwise accumulate one
+ * per day forever in the wiki root. The strict date-stamped pattern means the
+ * lexicographic sort IS chronological, and nothing else can match.
+ */
+export async function pruneOldReports(dir: string, keep = 3): Promise<string[]> {
+  let names: string[]
+  try {
+    names = await readdir(dir)
+  } catch {
+    return []
+  }
+  const reports = names.filter((n) => /^lint-report-\d{4}-\d{2}-\d{2}\.md$/.test(n)).sort()
+  const stale = reports.slice(0, Math.max(0, reports.length - keep))
+  for (const name of stale) {
+    await rm(resolve(dir, name))
+  }
+  return stale
+}
+
 // ─── Report ───────────────────────────────────────────────
 
 function formatReport(issues: LintIssue[]): string {
@@ -494,6 +518,9 @@ async function main() {
   const reportPath = resolve(config.kb.wiki, `lint-report-${todayDate()}.md`)
   await Bun.write(reportPath, report)
   console.log(`Report saved to: ${reportPath}`)
+
+  const pruned = await pruneOldReports(config.kb.wiki)
+  if (pruned.length > 0) console.log(`Pruned ${pruned.length} old report(s): ${pruned.join(", ")}`)
 
   const errors = allIssues.filter((i) => i.severity === "error").length
   const warnings = allIssues.filter((i) => i.severity === "warning").length

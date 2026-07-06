@@ -33,7 +33,7 @@
 npx skills add RayChang/agent-skills@<skill-name>
 ```
 
-> Installed skills live in `~/.claude/skills/<skill-name>/` and are auto-loaded on Claude Code startup.
+> When run inside a project, the skill's files land in the project's `.agents/skills/<skill-name>/` with a symlink in `.claude/skills/` (auto-loaded on Claude Code startup). With the global flag it installs to user-level `~/.agents/skills/`. **To update an installed skill, re-run the same install command in that project** — skills are copy-deployed; editing this repo changes nothing until redeployed.
 
 ---
 
@@ -92,13 +92,40 @@ Based on [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/4
 | `init` | Initialize the KB, set up directory structure and schema |
 | `ingest` | Process a new source: update wiki pages + write a per-source summary (`summaries/`, the ingest ledger) |
 | `query` | Answer a question from the wiki (facts cited, inference labeled); file substantial answers back |
-| `lint` | Health check: broken links, orphan pages, contradictions, un-ingested sources, **prompt-injection marker scan** (raw + wiki, flagged for human review) |
+| `lint` | Health check: broken links, orphan pages, contradictions, un-ingested sources, **prompt-injection marker scan** (raw + wiki, flagged for human review); reports auto-pruned to the newest 3 |
 | `map` | Rebuild index, MOCs, and cross-links |
 | `verify` | Drift audit: check wiki pages against the actual codebase |
 | `capture` | Extract design decisions and lessons after a milestone |
 | `migrate` | Upgrade an older KB to the current schema (rebuild schema preserving customizations, backfill the summaries ledger, add overview) |
 
 > 💡 **`verify` ≠ `lint`**: `lint` checks the wiki's *internal* health (broken links, orphans, contradictions); `verify` checks its *external* alignment — whether pages still match the code they describe. Forward-design pages aren't drift; only the current-state claims they assert can drift. Fixes are always re-verified in an independent pass.
+
+#### ⚙️ Running the Scripts Directly (lint / map)
+
+`lint` and `map` ship deterministic scripts (requires [Bun](https://bun.sh)) that agents run directly — no LLM tokens spent. `<skill-dir>` is the skill's install directory (the "Base directory" announced when the skill loads — `.claude/skills/kb-wiki`, `.agents/skills/kb-wiki`, etc. depending on deployment). Always run from the **project root**:
+
+```bash
+bun "<skill-dir>/scripts/lint.ts"                   # structural checks + injection-marker scan
+bun "<skill-dir>/scripts/lint.ts" --deep            # + LLM content analysis (contradictions, staleness, gaps)
+bun "<skill-dir>/scripts/map.ts"                    # rebuild index + MOCs (preserves curated one-liners)
+bun "<skill-dir>/scripts/map.ts" --deep             # + LLM cross-link discovery
+bun "<skill-dir>/scripts/map.ts" --regen-summaries  # re-extract every summary from page bodies
+```
+
+Behavior notes:
+
+- The default mode has **zero SDK dependency** — only `--deep` needs `@anthropic-ai/sdk`; when it's missing, the structural part still completes with an actionable message
+- Running in a directory without `kb/wiki/` refuses outright (exit 1) instead of scaffolding a junk KB skeleton
+- Lint reports are written to `kb/wiki/lint-report-<date>.md`; only the newest 3 are kept
+- `map` preserves existing one-liners in `index.md` by default (they're treated as human-curated); only new pages get extracted summaries — pass `--regen-summaries` to deliberately re-extract all
+
+Environment variables (all optional):
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `KB_DEV` | Developer handle for the activity log (written to `kb/wiki/log/<dev>.md`) | slug of `git config user.name` |
+| `KB_MODEL` | Model used by `--deep` | `claude-sonnet-4-6` |
+| `KB_MAX_TOKENS` | `--deep` response cap (positive integer; invalid values fall back) | `4096` |
 
 #### 🔐 Trust Boundary & Security
 
@@ -115,6 +142,12 @@ The KB ingests **untrusted** sources and runs shell commands, so every operation
 npx skills add RayChang/agent-skills@kb-wiki
 ```
 
+**Updating an existing install**: skills are copy-deployed — editing this repo changes nothing in projects that already installed it. Re-run the install command in each project to pull the latest (the user-level global copy needs the CLI's global variant; a project-level run won't touch it):
+
+```bash
+bunx skills add https://github.com/raychang/agent-skills --skill kb-wiki
+```
+
 #### 🎬 First-Time Setup (init)
 
 1. `cd` into the project where you want the knowledge base
@@ -124,7 +157,7 @@ npx skills add RayChang/agent-skills@kb-wiki
    - 📁 `kb/raw/sources/`, `kb/raw/assets/` (raw layer — immutable)
    - 📁 `kb/wiki/{categories}/`, `kb/wiki/summaries/` (LLM-maintained wiki layer; summaries = per-source digests)
    - 📄 `kb/schema.md` (this project's KB conventions)
-   - 📄 `kb/wiki/index.md`, `kb/wiki/log.md`, `kb/wiki/overview.md` (high-level synthesis, kept current by ingest)
+   - 📄 `kb/wiki/index.md`, `kb/wiki/log/<dev>.md` (one append-only activity log per developer — no merge conflicts), `kb/wiki/overview.md` (high-level synthesis, kept current by ingest)
    - 📝 A `## Knowledge Base` section is appended to the project's `CLAUDE.md` so any future LLM agent entering the project auto-discovers the KB
 
 #### 🔄 Daily Workflow
