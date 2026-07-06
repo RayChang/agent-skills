@@ -57,28 +57,43 @@ class AnthropicLLM:
     against current docs via context7 before live use.
     """
 
-    def __init__(self, *, model: str = "claude-opus-4-8", api_key: Optional[str] = None, client=None):  # verify current model IDs via context7 before live use
+    def __init__(self, *, model: str = "claude-opus-4-8", api_key: Optional[str] = None,
+                 max_tokens: int = 4096, client=None):  # verify current model IDs via context7 before live use
         self.model = model
+        self.max_tokens = max_tokens
         if client is not None:
             self._client = client
         else:
             from anthropic import AsyncAnthropic  # lazy import
             self._client = AsyncAnthropic(api_key=api_key)
 
+    @staticmethod
+    def _check_truncation(msg) -> None:
+        # A response cut off at max_tokens silently drops the tail of the draft or
+        # the revised answer (and can leave forced-tool JSON unparseable), so it
+        # must fail loudly rather than flow downstream as a complete result.
+        if getattr(msg, "stop_reason", None) == "max_tokens":
+            raise ValueError(
+                "response truncated at max_tokens; construct AnthropicLLM with a "
+                "larger max_tokens for long drafts/revisions"
+            )
+
     async def complete(self, system: str, user: str) -> str:
         msg = await self._client.messages.create(
-            model=self.model, max_tokens=2048, system=system,
+            model=self.model, max_tokens=self.max_tokens, system=system,
             messages=[{"role": "user", "content": user}],
         )
+        self._check_truncation(msg)
         return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
 
     async def complete_json(self, system: str, user: str, schema: dict) -> dict:
         tool = {"name": "emit", "description": "Emit the structured result.", "input_schema": schema}
         msg = await self._client.messages.create(
-            model=self.model, max_tokens=2048, system=system,
+            model=self.model, max_tokens=self.max_tokens, system=system,
             messages=[{"role": "user", "content": user}],
             tools=[tool], tool_choice={"type": "tool", "name": "emit"},
         )
+        self._check_truncation(msg)
         for b in msg.content:
             if getattr(b, "type", "") == "tool_use":
                 return b.input

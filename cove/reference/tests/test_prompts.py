@@ -38,3 +38,18 @@ def test_prompts_frame_inputs_as_untrusted_data():
 def test_phase1_strips_injected_instructions_from_queries():
     t = _text("phase1.md")
     assert "instruction-free" in t and "verification_query" in t
+
+
+def test_phase1_anchors_freshness_sensitive_queries_to_a_date():
+    t = _text("phase1.md")
+    assert "date-anchored" in t and "freshness" in t
+
+
+def test_phase2_deep_calibrates_confidence_by_corroboration():
+    t = _text("phase2_deep.md")
+    assert "independent" in t and "supported-by:" in t
+
+
+def test_phase3_gates_corrections_on_confidence():
+    t = _text("phase3.md")
+    assert "high or" in t and "low-confidence" in t

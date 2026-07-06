@@ -6,14 +6,21 @@ A provider-agnostic Python implementation of the Agentic CoVe 2.0 pipeline used 
 
 ## Pipeline
 
-`run(query, llm, search, max_iterations=1)`:
+`run(query, llm, search, today=None, max_iterations=1)`:
 1. **phase1_plan** — draft + JSON verification plan (`needs_verification` gate, per-claim
-   `deep`/`shallow` tier).
+   `deep`/`shallow` tier). Pass `today="2026-07-06"` so freshness-sensitive claims get
+   date-anchored verification queries; a failed JSON parse retries once with the
+   validation error fed back to the model.
 2. **phase2_verify** — `deep` claims verified open-book in parallel (`asyncio.gather`),
    each verifier isolated from the draft; `shallow` claims stay closed-book and
-   conservative.
-3. **phase3_finalize** — strict review against evidence → revised answer with `[n]`
-   citations.
+   conservative. A verifier failure (search outage, provider error) degrades that one
+   claim to a conservative "unable to verify" result instead of aborting the phase.
+   The verifier reports which evidence items ground its answer (`Supported-by:`), so a
+   claim's `sources` list only the supporting URLs, not everything retrieved.
+3. **phase3_finalize** — strict review against evidence (the reviewer sees short
+   evidence quotes, not just verifier verdicts) → revised answer with `[n]` citations.
+   Corrections are confidence-gated: a Low-confidence contradiction produces a caveat,
+   never a rewrite.
 
 `max_iterations > 1` enables the optional CRITIC-style verify-then-correct loop. Note:
 each extra iteration re-verifies *all* claims (a deliberate simplification over the
@@ -39,8 +46,9 @@ from cove2.providers import AnthropicLLM, TavilySearch
 
 final = asyncio.run(run(
     "How tall is the Eiffel Tower?",
-    AnthropicLLM(api_key="..."),
+    AnthropicLLM(api_key="..."),      # max_tokens=4096 default; raise for long-form answers
     TavilySearch(api_key="..."),
+    today="2026-07-06",               # anchors freshness-sensitive verification queries
 ))
 print(final.revised)      # answer with [n] citations
 print(final.citations)    # source URLs
@@ -53,7 +61,9 @@ print(final.citations)    # source URLs
 **verify the current signature via context7 before relying on it:**
 
 - **Anthropic** (shipped): forced tool call (`tools=[{...}], tool_choice={"type":"tool"}`),
-  read `tool_use.input`.
+  read `tool_use.input`. A `stop_reason == "max_tokens"` response raises instead of
+  returning a silently truncated draft/revision — construct with a larger
+  `max_tokens=` when answers run long.
 - **OpenAI**: `chat.completions.create(..., response_format={"type":"json_schema",
   "json_schema":{"name":"plan","schema":schema}})`, then
   `json.loads(resp.choices[0].message.content)`. (Or the higher-level
