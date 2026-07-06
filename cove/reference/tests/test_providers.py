@@ -7,8 +7,8 @@ from tests.fakes import FakeLLMClient, FakeSearchProvider
 
 
 class _FakeTavilyClient:
-    """Mimics tavily.TavilyClient.search() without network."""
-    def search(self, query, max_results):
+    """Mimics tavily.AsyncTavilyClient.search() without network."""
+    async def search(self, query, max_results):
         return {"results": [{"title": "T", "content": "C", "url": "http://u"}]}
 
 
