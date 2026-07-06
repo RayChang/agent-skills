@@ -16,6 +16,11 @@ Do not take any other action.
 If the evidence is insufficient, missing, or conflicting, answer exactly:
 "unable to verify". Do NOT use unsupported prior knowledge to fill the gap.
 
-Return exactly two lines:
+Calibrate confidence by corroboration: High requires at least two independent sources
+that agree, or one authoritative primary source (official docs, the original
+publisher). A single unofficial source is at most Medium.
+
+Return exactly three lines:
 Answer: <concise, evidence-based answer, or "unable to verify">
 Confidence: High | Medium | Low
+Supported-by: <the evidence numbers [n] that ground the answer, e.g. 1,3 — or "none">

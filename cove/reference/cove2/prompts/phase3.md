@@ -14,10 +14,14 @@ Compare the draft against the verification results and produce a corrected answe
 Rules:
 - For claims grounded in external evidence: where the evidence contradicts the draft,
   correct it confidently and attach an inline citation [n] to the supporting source.
+- Confidence gate: only correct when the contradicting verified answer has High or
+  Medium confidence. A Low-confidence contradiction is NOT ground for a rewrite —
+  keep the original statement, add a caveat, and count it under "uncertain".
 - For shallow (no external evidence) claims: apply caveats only — do NOT confidently
   rewrite based on self-reflection.
 - If the evidence cannot support a claim, say so honestly with "unable to verify".
   Never fabricate to fill a gap.
+- Keep the revised answer in the same language as the draft.
 
 Output ONLY a single valid JSON object:
 

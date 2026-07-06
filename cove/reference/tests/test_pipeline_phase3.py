@@ -28,6 +28,8 @@ def test_phase3_emits_citations_and_sees_draft():
     # the reviewer DOES receive the draft (its job is to compare draft vs evidence)
     _system, user, _schema = llm.json_calls[0]
     assert "The Eiffel Tower is 250m tall." in user
+    # ...and the evidence quotes, so it can weigh how strongly a source backs the answer
+    assert "330 m" in user and "http://x" in user
 
 
 def test_phase3_fences_untrusted_draft_and_results():

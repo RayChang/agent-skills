@@ -30,12 +30,17 @@ class _Block:
             setattr(self, k, v)
 
 
-def _anthropic_client_returning(blocks):
+def _anthropic_client_returning(blocks, stop_reason=None, calls=None):
     class _Messages:
         @staticmethod
         async def create(**kwargs):
+            if calls is not None:
+                calls.append(kwargs)
+
             class _Msg:
                 content = blocks
+
+            _Msg.stop_reason = stop_reason
             return _Msg()
 
     class _Client:
@@ -61,6 +66,25 @@ def test_anthropic_complete_json_raises_without_tool_use():
     llm = AnthropicLLM(client=client)
     with pytest.raises(ValueError):
         asyncio.run(llm.complete_json("sys", "usr", {}))
+
+
+def test_anthropic_raises_on_truncated_response():
+    # A max_tokens-truncated response silently drops the tail of the draft or the
+    # revised answer, so it must fail loudly instead of flowing downstream.
+    client = _anthropic_client_returning([_Block("text", text="cut of")], stop_reason="max_tokens")
+    llm = AnthropicLLM(client=client)
+    with pytest.raises(ValueError, match="max_tokens"):
+        asyncio.run(llm.complete("sys", "usr"))
+    with pytest.raises(ValueError, match="max_tokens"):
+        asyncio.run(llm.complete_json("sys", "usr", {}))
+
+
+def test_anthropic_max_tokens_is_configurable():
+    calls = []
+    client = _anthropic_client_returning([_Block("text", text="ok")], calls=calls)
+    llm = AnthropicLLM(client=client, max_tokens=8192)
+    asyncio.run(llm.complete("sys", "usr"))
+    assert calls[0]["max_tokens"] == 8192
 
 
 def test_fakes_satisfy_protocols():

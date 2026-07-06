@@ -80,11 +80,66 @@ def test_gate_false_returns_empty():
 
 
 @pytest.mark.parametrize("text,expected", [
-    ("", ("unable to verify", "Low")),                                  # empty -> conservative defaults
-    ("Answer: Paris", ("Paris", "Low")),                                # missing Confidence -> default Low
-    ("Answer: foo: bar\nConfidence: High", ("foo: bar", "High")),       # extra colon in answer kept
-    ("answer: paris\nconfidence: high", ("paris", "High")),             # casing: confidence normalized
-    ("  Answer:  spaced \n  Confidence:  medium ", ("spaced", "Medium")),  # whitespace + casing
+    ("", ("unable to verify", "Low", None)),                                  # empty -> conservative defaults
+    ("Answer: Paris", ("Paris", "Low", None)),                                # missing Confidence -> default Low
+    ("Answer: foo: bar\nConfidence: High", ("foo: bar", "High", None)),       # extra colon in answer kept
+    ("answer: paris\nconfidence: high", ("paris", "High", None)),             # casing: confidence normalized
+    ("  Answer:  spaced \n  Confidence:  medium ", ("spaced", "Medium", None)),  # whitespace + casing
+    ("Answer: a\nConfidence: High\nSupported-by: 1,3", ("a", "High", [1, 3])),   # supporting evidence parsed
+    ("Answer: a\nConfidence: Low\nsupported-by: none", ("a", "Low", [])),        # explicit none -> empty
+    ("Answer: a\nConfidence: Low\nSupported-by: gibberish", ("a", "Low", None)),  # unparseable -> fallback
 ])
 def test_parse_verifier_output_edge_cases(text, expected):
     assert parse_verifier_output(text) == expected
+
+
+def test_deep_verifier_supported_by_restricts_sources():
+    # Citation precision: only the evidence the verifier says grounds its answer
+    # becomes a source; out-of-range numbers are dropped.
+    plan = Plan(
+        draft="d",
+        needs_verification=True,
+        claims=[Claim("Paris is the capital", "deep", "what is the capital of France?")],
+    )
+    search = FakeSearchProvider(default=[
+        SearchResult("t1", "s1", "http://a"),
+        SearchResult("t2", "s2", "http://b"),
+        SearchResult("t3", "s3", "http://c"),
+    ])
+    llm = FakeLLMClient(text_responses=["Answer: Paris\nConfidence: High\nSupported-by: 2, 9"])
+
+    results = asyncio.run(phase2_verify(plan, search, llm))
+
+    assert results[0].sources == ["http://b"]
+
+
+def test_verifier_error_degrades_single_claim():
+    # A search outage on one claim must not abort the phase: that claim degrades to
+    # a conservative unverified result and the others still verify.
+    plan = Plan(
+        draft="d",
+        needs_verification=True,
+        claims=[
+            Claim("failing", "deep", "boom?"),
+            Claim("working", "deep", "what is the capital of France?"),
+        ],
+    )
+
+    class _ExplodingSearch(FakeSearchProvider):
+        async def search(self, query):
+            if query == "boom?":
+                raise RuntimeError("search outage")
+            return await super().search(query)
+
+    search = _ExplodingSearch(default=[SearchResult("t", "Paris", "http://x")])
+    llm = FakeLLMClient(text_responses=["Answer: Paris\nConfidence: High"])
+
+    results = asyncio.run(phase2_verify(plan, search, llm))
+
+    assert len(results) == 2
+    failed, ok = results[0], results[1]
+    assert failed.answer.startswith("unable to verify")
+    assert "search outage" in failed.answer
+    assert failed.confidence == "Low"
+    assert failed.externally_grounded is False and failed.sources == []
+    assert ok.answer == "Paris" and ok.sources == ["http://x"]

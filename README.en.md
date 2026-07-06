@@ -234,6 +234,13 @@ text).
 > draft, avoiding repeated hallucination) and adds CRITIC's **open-book grounding**.
 > `shallow` is deliberately conservative because CRITIC shows self-correction without
 > external feedback can fail to help or even degrade the answer.
+>
+> 🧭 2.x hardening: freshness-sensitive claims get **date-anchored queries**; corrections
+> require **High/Medium-confidence** evidence (Low yields a caveat, never a rewrite);
+> confidence calibration demands **≥2 independent sources or 1 authoritative primary
+> source**; version-sensitive library/API claims prefer a **docs-retrieval tool** (e.g.
+> Context7); claims dropped by the claim cap are **listed in the Summary** — no silent
+> truncation.
 
 #### 🔐 Trust Boundary & Security
 
@@ -241,9 +248,12 @@ Every `/cove` input — the `/cove <text>` argument, the previous response, and 
 evidence — is **untrusted**. To resist indirect prompt injection, all three interpolation
 points (Phase 2 question + evidence, Phase 3 draft + results) are fenced in `<untrusted_*>`
 tags, with the prompts framing the contents as **data, not instructions**; Phase 1 strips
-embedded directives when forming queries; and the Phase 2 subagent is granted **read-only
-web search only** (least privilege). The reference implementation ships matching regression
-tests.
+embedded directives when forming queries; and the Phase 2 verifier's least privilege is
+**enforced by the bundled `cove-verifier` agent** (tool allowlist: `WebSearch, WebFetch`
+only — copy `cove/agents/cove-verifier.md` into `.claude/agents/` to activate). Without
+that agent installed, the pipeline falls back to prompt-level restriction, which the
+SKILL explicitly labels **instructive, not platform-enforced**. The reference
+implementation ships matching regression tests.
 
 #### 🐍 Reference implementation
 
