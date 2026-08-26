@@ -83,7 +83,8 @@ export function parsePage(relativePath: string, content: string): PageInfo {
   }
 
   const linkMatches = content.matchAll(/\[\[([^\]]+)\]\]/g)
-  const outboundLinks = [...linkMatches].map((m) => m[1].replace(".md", ""))
+  // Dedupe: a page that cites the same target twice must list it once in MOCs/index.
+  const outboundLinks = [...new Set([...linkMatches].map((m) => m[1].replace(".md", "")))]
 
   return { relativePath, slug, title, category, tags, summary, outboundLinks, content }
 }

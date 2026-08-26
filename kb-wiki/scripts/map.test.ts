@@ -187,3 +187,9 @@ test("normalizeSuggestions: non-array or malformed payloads never reach injectLi
     ]),
   ).toEqual([{ source: "a/x", target: "a/y", reason: "r" }])
 })
+
+test("parsePage: outboundLinks are deduplicated", () => {
+  // Regression: a page citing [[a/x]] twice was listed twice in its MOC entry.
+  const p = parsePage("c/p.md", "---\ntitle: P\ncategory: c\ntags: []\n---\nSee [[a/x]] and again [[a/x]] and [[a/y]].")
+  expect(p.outboundLinks).toEqual(["a/x", "a/y"])
+})

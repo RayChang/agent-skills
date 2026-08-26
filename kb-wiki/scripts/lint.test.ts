@@ -202,3 +202,7 @@ test("findingsToIssues: keeps schema fields, coerces unknown severity to info, d
     { severity: "info", category: "stale", message: "old" },
   ])
 })
+
+test("buildDeepPrompt: tells the model index/log/summaries are omitted on purpose", () => {
+  expect(buildDeepPrompt([])).toMatch(/deliberately omitted.*do not report them as missing/s)
+})

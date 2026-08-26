@@ -388,6 +388,9 @@ export function buildDeepPrompt(pages: Array<{ relativePath: string; content: st
 
   return `Analyze this wiki for quality issues.
 
+Note: the wiki's index.md, per-developer log files, summaries/ ledger, and previous lint
+reports exist but are deliberately omitted below — do not report them as missing.
+
 ## Wiki Contents
 ${condensed}
 
