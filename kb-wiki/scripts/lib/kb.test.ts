@@ -1,5 +1,5 @@
 import { resolve } from "path"
-import { test, expect, afterEach, spyOn } from "bun:test"
+import { test, expect, afterEach } from "bun:test"
 import { mkdir, rm } from "fs/promises"
 import {
   slugifyDev, resolveDevSlug, isLogFile, pickLogTarget, insertNewestAtTop, logHeader, formatLogEntry,
@@ -38,17 +38,9 @@ function withEnv(key: string, value: string | undefined, fn: () => void) {
   }
 }
 
-// Fake a `git config user.name` result; restores the real Bun.spawnSync afterward.
-function withGitName(stdout: string, exitCode: number, fn: () => void) {
-  const spy = spyOn(Bun, "spawnSync").mockReturnValue({
-    exitCode,
-    stdout: Buffer.from(stdout),
-  } as any)
-  try {
-    fn()
-  } finally {
-    spy.mockRestore()
-  }
+// Fake a `git config user.name` result via the injectable reader (no Bun-specific spy).
+function withGitName(stdout: string, exitCode: number, fn: (opts: { gitUserName: () => string | null }) => void) {
+  fn({ gitUserName: () => (exitCode === 0 ? stdout.trim() || null : null) })
 }
 
 test("resolveDevSlug: KB_DEV overrides and is slugged", () => {
@@ -67,30 +59,24 @@ test("resolveDevSlug: empty KB_DEV falls through to git name (non-empty, not unk
 
 test("resolveDevSlug: KB_DEV that slugifies to empty falls through to git", () => {
   withEnv("KB_DEV", "..", () => {
-    withGitName("Git Person", 0, () => {
-      expect(resolveDevSlug()).toBe("git-person")
+    withGitName("Git Person", 0, (opts) => {
+      expect(resolveDevSlug(opts)).toBe("git-person")
     })
   })
 })
 
 test('resolveDevSlug: "unknown" when git returns an empty name', () => {
   withEnv("KB_DEV", undefined, () => {
-    withGitName("", 0, () => {
-      expect(resolveDevSlug()).toBe("unknown")
+    withGitName("", 0, (opts) => {
+      expect(resolveDevSlug(opts)).toBe("unknown")
     })
   })
 })
 
 test('resolveDevSlug: "unknown" when the git invocation fails', () => {
   withEnv("KB_DEV", undefined, () => {
-    const spy = spyOn(Bun, "spawnSync").mockImplementation(() => {
-      throw new Error("git not found")
-    })
-    try {
-      expect(resolveDevSlug()).toBe("unknown")
-    } finally {
-      spy.mockRestore()
-    }
+    // readGitUserName swallows spawn failures and yields null → "unknown"
+    expect(resolveDevSlug({ gitUserName: () => null })).toBe("unknown")
   })
 })
 

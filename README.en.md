@@ -102,7 +102,7 @@ Based on [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/4
 
 #### ⚙️ Running the Scripts Directly (lint / map)
 
-`lint` and `map` ship deterministic scripts (requires [Bun](https://bun.sh)) that agents run directly — no LLM tokens spent. `<skill-dir>` is the skill's install directory (the "Base directory" announced when the skill loads — `.claude/skills/kb-wiki`, `.agents/skills/kb-wiki`, etc. depending on deployment). Always run from the **project root**:
+`lint` and `map` ship deterministic scripts (Bun recommended; Node ≥ 22.6 also works via `node --experimental-strip-types <script>`, no flag from 23.6) that agents run directly — no LLM tokens spent. `<skill-dir>` is the skill's install directory (the "Base directory" announced when the skill loads — `.claude/skills/kb-wiki`, `.agents/skills/kb-wiki`, etc. depending on deployment). Always run from the **project root**:
 
 ```bash
 bun "<skill-dir>/scripts/lint.ts"                   # structural checks + injection-marker scan
@@ -124,8 +124,10 @@ Environment variables (all optional):
 | Variable | Purpose | Default |
 |---|---|---|
 | `KB_DEV` | Developer handle for the activity log (written to `kb/wiki/log/<dev>.md`) | slug of `git config user.name` |
-| `KB_MODEL` | Model used by `--deep` | `claude-sonnet-4-6` |
-| `KB_MAX_TOKENS` | `--deep` response cap (positive integer; invalid values fall back) | `4096` |
+| `KB_MODEL` | Model used by `--deep` (default for `map`; also becomes `lint`'s default when set) | `claude-sonnet-5` |
+| `KB_LINT_MODEL` | Model used by `lint --deep` (contradiction / staleness reasoning) | `claude-opus-5` |
+| `KB_MAX_TOKENS` | `--deep` response cap (positive integer; invalid values fall back; streamed — hitting the cap is a hard error, never a silent truncation) | `32000` |
+| `KB_EFFORT` | Reasoning depth for `--deep` (`low`/`medium`/`high`/`xhigh`/`max`) | `high` |
 
 #### 🔐 Trust Boundary & Security
 

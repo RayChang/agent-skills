@@ -168,3 +168,37 @@ test("pruneOldReports: no-op at or under the keep limit and on a missing dir", a
     await rm(d, { recursive: true, force: true })
   }
 })
+
+// ─── Deep analysis (structured output plumbing) ───────────
+
+import { buildDeepPrompt, findingsToIssues } from "./lint"
+
+test("buildDeepPrompt: sends full page bodies, skips index/log/summaries/lint reports", () => {
+  const long = "x".repeat(5000)
+  const prompt = buildDeepPrompt([
+    { relativePath: "concepts/a.md", content: long },
+    { relativePath: "index.md", content: "INDEX" },
+    { relativePath: "log/ray.md", content: "LOG" },
+    { relativePath: "summaries/s.md", content: "SUM" },
+    { relativePath: "lint-report-2026-01-01.md", content: "OLDREPORT" },
+  ])
+  // Regression: pages used to be cut at 2000 chars, hiding later claims from contradiction checks.
+  expect(prompt).toContain(long)
+  expect(prompt).not.toContain("[...truncated]")
+  for (const s of ["INDEX", "LOG", "SUM", "OLDREPORT"]) expect(prompt).not.toContain(s)
+})
+
+test("findingsToIssues: keeps schema fields, coerces unknown severity to info, drops empties", () => {
+  const issues = findingsToIssues([
+    { severity: "error", category: "contradiction", message: "A vs B", file: "concepts/a.md" },
+    // Regression: the old regex parser marked any line containing the word "error" as an error.
+    { severity: "info", category: "gap", message: "No page on error handling" },
+    { severity: "loud" as any, category: "stale", message: "  old  " },
+    { severity: "info", category: "gap", message: "" },
+  ])
+  expect(issues).toEqual([
+    { severity: "error", category: "contradiction", message: "A vs B", file: "concepts/a.md" },
+    { severity: "info", category: "gap", message: "No page on error handling" },
+    { severity: "info", category: "stale", message: "old" },
+  ])
+})

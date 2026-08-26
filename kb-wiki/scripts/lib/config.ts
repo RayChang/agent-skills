@@ -19,6 +19,18 @@ export function positiveIntEnv(name: string, fallback: number): number {
   return n
 }
 
+export type Effort = "low" | "medium" | "high" | "xhigh" | "max"
+const EFFORTS: readonly Effort[] = ["low", "medium", "high", "xhigh", "max"]
+
+/** Effort-level env override; anything outside the API's enum falls back with a warning. */
+export function effortEnv(name: string, fallback: Effort): Effort {
+  const raw = process.env[name]
+  if (raw === undefined || raw === "") return fallback
+  if ((EFFORTS as readonly string[]).includes(raw)) return raw as Effort
+  console.warn(`Ignoring invalid ${name}="${raw}" — using ${fallback} (one of ${EFFORTS.join("/")})`)
+  return fallback
+}
+
 export const config = {
   root: ROOT,
   kb: {
@@ -30,8 +42,14 @@ export const config = {
     rawSources: resolve(ROOT, "kb/raw/sources"),
   },
   ai: {
-    model: process.env.KB_MODEL ?? "claude-sonnet-4-6",
-    maxTokens: positiveIntEnv("KB_MAX_TOKENS", 4096),
+    // map --deep (cross-link discovery): Sonnet-class is enough.
+    model: process.env.KB_MODEL ?? "claude-sonnet-5",
+    // lint --deep (contradiction / staleness reasoning over the whole wiki): Opus-class.
+    // KB_LINT_MODEL wins; KB_MODEL is honoured as a global override when set.
+    lintModel: process.env.KB_LINT_MODEL ?? process.env.KB_MODEL ?? "claude-opus-5",
+    // Streaming request → large ceiling is safe; truncation is detected via stop_reason.
+    maxTokens: positiveIntEnv("KB_MAX_TOKENS", 32000),
+    effort: effortEnv("KB_EFFORT", "high"),
   },
 } as const
 

@@ -1,13 +1,15 @@
-import { readdir, stat } from "fs/promises"
-import { existsSync } from "fs"
-import { resolve, relative } from "path"
-import { config } from "./config"
+import { readdir, stat, readFile, writeFile, mkdir } from "node:fs/promises"
+import { existsSync } from "node:fs"
+import { resolve, relative, dirname } from "node:path"
+import { fileURLToPath } from "node:url"
+import { spawnSync } from "node:child_process"
+import { config } from "./config.ts"
 
 // ─── Developer identity ───────────────────────────────────
 
 /**
  * Filename-safe slug for a developer identifier. NOT the Init shell allowlist:
- * this value only becomes a path component (Bun.write), never a shell argument,
+ * this value only becomes a path component (writeText), never a shell argument,
  * so unicode letters are preserved while path-dangerous characters are removed.
  */
 export function slugifyDev(raw: string): string {
@@ -25,22 +27,55 @@ export function slugifyDev(raw: string): string {
  * Resolve the current developer slug for log routing.
  * Order: KB_DEV env override → git config user.name → "unknown".
  */
-export function resolveDevSlug(): string {
+export function resolveDevSlug(opts: { gitUserName?: () => string | null } = {}): string {
   const env = process.env.KB_DEV?.trim()
   if (env) {
     const s = slugifyDev(env)
     if (s) return s
   }
-  try {
-    const p = Bun.spawnSync(["git", "config", "user.name"]) // array form — no shell
-    if (p.exitCode === 0) {
-      const s = slugifyDev(p.stdout.toString().trim())
-      if (s) return s
-    }
-  } catch {
-    /* git missing / not a repo → fall through */
+  const name = (opts.gitUserName ?? readGitUserName)()
+  if (name) {
+    const s = slugifyDev(name)
+    if (s) return s
   }
   return "unknown"
+}
+
+/** `git config user.name`, or null when git is missing / not a repo / unset. */
+export function readGitUserName(): string | null {
+  try {
+    const p = spawnSync("git", ["config", "user.name"], { encoding: "utf8" }) // argv form — no shell
+    if (p.status === 0) return p.stdout.trim() || null
+  } catch {
+    /* fall through */
+  }
+  return null
+}
+
+// ─── Portable file helpers (Node + Bun) ───────────────────
+
+export async function readText(path: string): Promise<string> {
+  return readFile(path, "utf8")
+}
+
+/** Write text, creating parent directories (matches the old Bun.write behaviour). */
+export async function writeText(path: string, content: string): Promise<void> {
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, content, "utf8")
+}
+
+/**
+ * True when the module at `importMetaUrl` is the process entry point — a portable
+ * stand-in for Bun's import.meta.main (absent on Node < 24.2).
+ */
+export function isDirectRun(importMetaUrl: string): boolean {
+  const entry = process.argv[1]
+  if (!entry) return false
+  try {
+    return resolve(entry) === fileURLToPath(importMetaUrl)
+  } catch {
+    return false
+  }
 }
 
 // ─── Wiki File Operations ─────────────────────────────────
@@ -71,7 +106,7 @@ export async function readAllWikiPages(
         results.push({
           path: fullPath,
           relativePath: relative(config.kb.wiki, fullPath),
-          content: await Bun.file(fullPath).text(),
+          content: await readText(fullPath),
         })
       }
     }
@@ -139,7 +174,7 @@ export async function readRawTextSources(): Promise<
       } else if (s.isFile() && TEXT_EXT.test(name)) {
         results.push({
           relativePath: relative(config.kb.rawSources, fullPath),
-          content: await Bun.file(fullPath).text(),
+          content: await readText(fullPath),
         })
       }
     }
@@ -170,8 +205,8 @@ export async function writeLogEntry(opts: {
     legacyLogExists: existsSync(legacyLog),
     devFileExists: logDirExists && existsSync(resolve(logDir, `${dev}.md`)),
   })
-  const existing = target.isNew ? logHeader(dev) : await Bun.file(target.path).text()
-  await Bun.write(target.path, insertNewestAtTop(existing, entry))
+  const existing = target.isNew ? logHeader(dev) : await readText(target.path)
+  await writeText(target.path, insertNewestAtTop(existing, entry))
   return target.path
 }
 

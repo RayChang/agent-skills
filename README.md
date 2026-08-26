@@ -103,7 +103,7 @@ Skills 可透過兩種方式觸發：
 
 #### ⚙️ 腳本直跑（lint / map）
 
-`lint` 與 `map` 附確定性腳本（需 [Bun](https://bun.sh)），agent 會直接執行、不燒 LLM token。`<skill-dir>` 是 skill 的安裝目錄（skill 載入時顯示的 "Base directory"，依部署方式為 `.claude/skills/kb-wiki`、`.agents/skills/kb-wiki` 等）。一律從**專案根目錄**執行：
+`lint` 與 `map` 附確定性腳本（建議用 [Bun](https://bun.sh)；也可用 Node ≥ 22.6：`node --experimental-strip-types <script>`，23.6+ 免旗標），agent 會直接執行、不燒 LLM token。`<skill-dir>` 是 skill 的安裝目錄（skill 載入時顯示的 "Base directory"，依部署方式為 `.claude/skills/kb-wiki`、`.agents/skills/kb-wiki` 等）。一律從**專案根目錄**執行：
 
 ```bash
 bun "<skill-dir>/scripts/lint.ts"                   # 結構檢查 + injection 標記掃描
@@ -125,8 +125,10 @@ bun "<skill-dir>/scripts/map.ts" --regen-summaries  # 重新從頁面內文萃�
 | 變數 | 用途 | 預設 |
 |---|---|---|
 | `KB_DEV` | 活動日誌的開發者代號（寫入 `kb/wiki/log/<dev>.md`） | `git config user.name` 的 slug |
-| `KB_MODEL` | `--deep` 使用的模型 | `claude-sonnet-4-6` |
-| `KB_MAX_TOKENS` | `--deep` 回應上限（正整數，非法值退回預設） | `4096` |
+| `KB_MODEL` | `--deep` 使用的模型（`map` 的預設；設了也會成為 `lint` 的預設） | `claude-sonnet-5` |
+| `KB_LINT_MODEL` | `lint --deep` 使用的模型（矛盾／過期推理，較吃判斷力） | `claude-opus-5` |
+| `KB_MAX_TOKENS` | `--deep` 回應上限（正整數，非法值退回預設；串流請求，觸頂會直接報錯而非靜默截斷） | `32000` |
+| `KB_EFFORT` | `--deep` 的推理深度（`low`/`medium`/`high`/`xhigh`/`max`） | `high` |
 
 #### 🔐 信任邊界與安全
 
