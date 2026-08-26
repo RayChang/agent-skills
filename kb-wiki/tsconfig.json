@@ -1,6 +1,6 @@
 {
   // Editor-only config: gives the TS language server Bun + Node ambient types
-  // (Bun, process, require, import.meta.main) so the scripts stop showing phantom
+  // (Bun, process, require) so the scripts stop showing phantom
   // "cannot find name" errors. The scripts are still run with `bun script.ts`; nothing
   // is compiled from here (noEmit). Strict checks are intentionally left off so this
   // does not retro-flag existing loosely-typed code — it only resolves the globals.
@@ -15,7 +15,8 @@
     "skipLibCheck": true,
     "allowJs": true,
     "resolveJsonModule": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "allowImportingTsExtensions": true
   },
   "include": ["scripts/**/*.ts"]
 }

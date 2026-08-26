@@ -194,7 +194,7 @@ bun "<skill-dir>/scripts/lint.ts" --deep    # + LLM content analysis
 
 The script saves its report to `kb/wiki/lint-report-<date>.md` and keeps only the newest 3 (older reports are auto-pruned — they are generated artifacts, not knowledge content).
 
-If Bun is unavailable (command not found), fall back to doing it manually:
+If Bun is unavailable (command not found), try Node first — `node --experimental-strip-types "<skill-dir>/scripts/<script>.ts"` (Node ≥ 22.6; no flag needed from 23.6). Only if neither runtime exists, fall back to doing it manually:
 
 1. Read all pages in `kb/wiki/` and list the files in `kb/raw/sources/`
 2. Check for:
@@ -281,7 +281,7 @@ bun "<skill-dir>/scripts/map.ts" --regen-summaries  # re-extract every index/MOC
 
 > **Only `--deep` needs `@anthropic-ai/sdk`.** The default (and `--regen-summaries`) rebuild is fully deterministic and loads no AI dependency — it runs even when the SDK isn't installed. `--deep` lazily loads the SDK for the LLM cross-link step; if it can't be resolved, `map` completes the structural rebuild and then exits with an actionable message rather than crashing on a module error.
 
-If Bun is unavailable (command not found), fall back to doing it manually:
+If Bun is unavailable (command not found), try Node first — `node --experimental-strip-types "<skill-dir>/scripts/<script>.ts"` (Node ≥ 22.6; no flag needed from 23.6). Only if neither runtime exists, fall back to doing it manually:
 
 1. Read all pages in `kb/wiki/` (excluding log files (`log.md` / `log/*.md`), `_moc.md` files, and `summaries/`)
 2. Discover existing categories from the directory structure — do not assume fixed category names

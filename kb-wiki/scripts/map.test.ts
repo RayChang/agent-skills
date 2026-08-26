@@ -1,10 +1,9 @@
-import { test, expect, mock } from "bun:test"
+import { test, expect } from "bun:test"
 
 // map.ts loads ./lib/ai (→ @anthropic-ai/sdk) lazily, only inside the --deep branch, so
-// importing parsePage never touches the SDK. This stub is a harmless guard in case the
-// import chain regresses to a static SDK dependency; parsePage itself uses none of it.
-mock.module("@anthropic-ai/sdk", () => ({ default: class {} }))
-const { parsePage, parseIndexSummaries, resolveSummary, resolveProjectName } = await import("./map")
+// importing parsePage never touches the SDK. (No mock.module here: bun's module mocks leak
+// across test files in one run and would blank the SDK's error classes for ai.test.ts.)
+import { parsePage, parseIndexSummaries, resolveSummary, resolveProjectName } from "./map"
 
 // parsePage summary precedence: frontmatter `summary:` is canonical (keeps index/MOC
 // in lockstep with the page); pages without it fall back to the first body paragraph.
@@ -170,4 +169,32 @@ test("resolveProjectName: schema wins over the existing index title", () => {
 test("resolveProjectName: nothing usable → neutral 'Project', never the cwd", () => {
   expect(resolveProjectName(null, null)).toBe("Project")
   expect(resolveProjectName("# no title here", "no index title")).toBe("Project")
+})
+
+// ─── Cross-link suggestions (structured output plumbing) ──
+
+import { normalizeSuggestions } from "./map"
+
+test("normalizeSuggestions: non-array or malformed payloads never reach injectLinks", () => {
+  expect(normalizeSuggestions(undefined)).toEqual([])
+  expect(normalizeSuggestions({ links: [] })).toEqual([])
+  expect(
+    normalizeSuggestions([
+      { source: "a/x", target: "a/y", reason: "r" },
+      { source: "a/x", target: "a/x", reason: "self" },
+      { source: "a/x", target: 42, reason: "r" },
+      null,
+    ]),
+  ).toEqual([{ source: "a/x", target: "a/y", reason: "r" }])
+})
+
+test("parsePage: outboundLinks are deduplicated", () => {
+  // Regression: a page citing [[a/x]] twice was listed twice in its MOC entry.
+  const p = parsePage("c/p.md", "---\ntitle: P\ncategory: c\ntags: []\n---\nSee [[a/x]] and again [[a/x]] and [[a/y]].")
+  expect(p.outboundLinks).toEqual(["a/x", "a/y"])
+})
+
+test("normalizeSuggestions: caps at MAX_SUGGESTIONS (schema cannot express maxItems)", () => {
+  const many = Array.from({ length: 30 }, (_, i) => ({ source: "a/x", target: `a/y${i}`, reason: "r" }))
+  expect(normalizeSuggestions(many)).toHaveLength(20)
 })
