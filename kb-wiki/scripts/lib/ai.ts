@@ -49,6 +49,13 @@ export class AiError extends Error {
 
 export function classifyError(err: unknown): AiError {
   if (err instanceof AiError) return err
+  // Thrown by the SDK before any request is sent when no credential source is configured.
+  if (err instanceof Error && /Could not resolve authentication method/i.test(err.message)) {
+    return new AiError(
+      "No Anthropic credentials found. Export ANTHROPIC_API_KEY (or run `ant auth login`), then re-run --deep.",
+      false,
+    )
+  }
   if (err instanceof Anthropic.AuthenticationError) {
     return new AiError(
       "Authentication failed (401). Set ANTHROPIC_API_KEY or run `ant auth login`.",

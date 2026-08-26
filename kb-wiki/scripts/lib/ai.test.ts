@@ -140,6 +140,14 @@ test("classifyError: 400 / 401 / 404 are not retryable and name the fix", () => 
   expect(classifyError(apiErr(Anthropic.NotFoundError, 404)).message).toContain("KB_MODEL")
 })
 
+test("classifyError: missing-credentials SDK error names the env var (was 'Unexpected error')", () => {
+  const e = classifyError(
+    new Anthropic.AnthropicError("Could not resolve authentication method. Expected one of apiKey, authToken..."),
+  )
+  expect(e.retryable).toBe(false)
+  expect(e.message).toContain("ANTHROPIC_API_KEY")
+})
+
 test("ask: SDK exceptions are rethrown as classified AiError", async () => {
   installFake(apiErr(Anthropic.RateLimitError, 429))
   try {
