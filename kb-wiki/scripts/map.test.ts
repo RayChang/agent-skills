@@ -193,3 +193,8 @@ test("parsePage: outboundLinks are deduplicated", () => {
   const p = parsePage("c/p.md", "---\ntitle: P\ncategory: c\ntags: []\n---\nSee [[a/x]] and again [[a/x]] and [[a/y]].")
   expect(p.outboundLinks).toEqual(["a/x", "a/y"])
 })
+
+test("normalizeSuggestions: caps at MAX_SUGGESTIONS (schema cannot express maxItems)", () => {
+  const many = Array.from({ length: 30 }, (_, i) => ({ source: "a/x", target: `a/y${i}`, reason: "r" }))
+  expect(normalizeSuggestions(many)).toHaveLength(20)
+})

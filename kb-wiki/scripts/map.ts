@@ -288,8 +288,9 @@ const LINK_SCHEMA = {
   type: "object",
   properties: {
     suggestions: {
+      // No maxItems: structured-output schemas reject array length constraints (400).
+      // The cap lives in the prompt text and in normalizeSuggestions.
       type: "array",
-      maxItems: 20,
       items: {
         type: "object",
         properties: {
@@ -306,17 +307,21 @@ const LINK_SCHEMA = {
   additionalProperties: false,
 } as const
 
-/** Keep only well-formed, non-self suggestions. Exported for tests. */
+export const MAX_SUGGESTIONS = 20
+
+/** Keep only well-formed, non-self suggestions, capped at MAX_SUGGESTIONS. Exported for tests. */
 export function normalizeSuggestions(raw: unknown): LinkSuggestion[] {
   if (!Array.isArray(raw)) return []
-  return raw.filter(
-    (s): s is LinkSuggestion =>
-      !!s &&
-      typeof s.source === "string" &&
-      typeof s.target === "string" &&
-      s.source !== s.target &&
-      typeof s.reason === "string",
-  )
+  return raw
+    .filter(
+      (s): s is LinkSuggestion =>
+        !!s &&
+        typeof s.source === "string" &&
+        typeof s.target === "string" &&
+        s.source !== s.target &&
+        typeof s.reason === "string",
+    )
+    .slice(0, MAX_SUGGESTIONS)
 }
 
 async function discoverMissingLinks(
@@ -347,7 +352,7 @@ ${JSON.stringify(pageList, null, 2)}
 Rules:
 - Only suggest links where there is a genuine conceptual relationship
 - Do not suggest links to index.md or any log file
-- Max 20 suggestions
+- Max ${MAX_SUGGESTIONS} suggestions
 
 Each suggestion: source and target are page slugs exactly as listed ("category/page-slug").`
 
