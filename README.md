@@ -93,7 +93,7 @@ Skills 可透過兩種方式觸發：
 | `init` | 初始化 KB，建立目錄結構與 schema |
 | `ingest` | 處理新的來源文件：更新 wiki 頁面 + 寫入逐源摘要（`summaries/`，ingest 帳本） |
 | `query` | 以 wiki 內容回答問題（事實／推論分開標示），答案歸檔回 wiki |
-| `lint` | 健康檢查：斷鏈、孤立頁面、矛盾內容、未編譯來源、**prompt-injection 標記掃描**（raw 與 wiki 皆掃，列為 human-review）；報告自動保留最近 3 份 |
+| `lint` | 健康檢查：斷鏈、孤立頁面、矛盾內容、未編譯來源、**prompt-injection 標記掃描**（raw 與 wiki 皆掃，列為 human-review）；另有不花 token 的衛生檢查：頁面過長、索引過大、標籤近似重複、raw 來源在 ingest 後被改動（`sha256`）、Status 區塊缺日期或說明、放太久的 seedling；報告自動保留最近 3 份 |
 | `map` | 重建 index、MOC 及交叉連結 |
 | `verify` | 對照實際 codebase 檢查 wiki 是否漂移（drift audit） |
 | `capture` | 在里程碑結束後萃取設計決策與教訓 |

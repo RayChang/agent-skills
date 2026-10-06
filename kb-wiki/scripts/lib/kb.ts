@@ -1,8 +1,9 @@
 import { readdir, stat, readFile, writeFile, mkdir } from "node:fs/promises"
-import { existsSync } from "node:fs"
+import { existsSync, createReadStream } from "node:fs"
 import { resolve, relative, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import { spawnSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import { config } from "./config.ts"
 
 // ─── Developer identity ───────────────────────────────────
@@ -54,8 +55,14 @@ export function readGitUserName(): string | null {
 
 // ─── Portable file helpers (Node + Bun) ───────────────────
 
+/**
+ * Read text with line endings normalised to LF. Every parser here works line by line
+ * and a regex `.` never matches `\r`, so a file an editor saved as CRLF would otherwise
+ * parse as empty — for index.md that means a Map rebuild discarding every curated
+ * one-liner.
+ */
 export async function readText(path: string): Promise<string> {
-  return readFile(path, "utf8")
+  return (await readFile(path, "utf8")).replace(/\r\n/g, "\n")
 }
 
 /** Write text, creating parent directories (matches the old Bun.write behaviour). */
@@ -185,6 +192,40 @@ export async function readRawTextSources(): Promise<
 }
 
 /**
+ * SHA-256 of the named raw source files (paths relative to kb/raw/sources/). Hashes
+ * bytes, not decoded text, so it covers binary sources and matches `shasum -a 256` /
+ * `sha256sum` — the value Ingest records in a summary's `sha256` field.
+ *
+ * Only the files asked for are read, and each is streamed: a KB whose summaries record
+ * no hash (every KB that predates the field) reads nothing, and a multi-GB PDF never
+ * sits in memory. A file that cannot be read maps to its error code (EACCES, ENOENT, …)
+ * — an unreadable or vanished source is a finding for the caller to report, never a
+ * reason to abort the whole lint.
+ */
+export async function hashRawSources(relPaths: Iterable<string>): Promise<Map<string, RawHash>> {
+  const hashes = new Map<string, RawHash>()
+  for (const rel of new Set(relPaths)) {
+    try {
+      const hash = createHash("sha256")
+      for await (const chunk of createReadStream(resolve(config.kb.rawSources, rel))) hash.update(chunk)
+      hashes.set(rel, { sha256: hash.digest("hex") })
+    } catch (err) {
+      hashes.set(rel, { error: (err as { code?: string }).code ?? "unreadable" })
+    }
+  }
+  return hashes
+}
+
+/** Current state of one raw file: its hash, or the error code that stopped it being read. */
+export type RawHash = { sha256: string } | { error: string }
+
+/** Line count as `wc -l` reports it for newline-terminated text (a final newline adds no line). */
+export function lineCount(text: string): number {
+  if (text === "") return 0
+  return text.split("\n").length - (text.endsWith("\n") ? 1 : 0)
+}
+
+/**
  * Write a log entry to the correct file, creating it with a header if new.
  * Pure routing is delegated to pickLogTarget; this wires the filesystem.
  * Returns the path written.
@@ -225,6 +266,107 @@ export async function appendLog(
     dev: resolveDevSlug(),
     entry: formatLogEntry(action, description, details),
   })
+}
+
+// ─── Frontmatter (shared by lint and map — one parser, so they cannot disagree) ───
+
+const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---/
+
+/** Frontmatter block of a page with line endings normalised to LF; "" when absent. */
+export function frontmatterOf(content: string): string {
+  return content.match(FRONTMATTER)?.[1].replace(/\r/g, "") ?? ""
+}
+
+/** The page text after its frontmatter block — the whole text when it has none. */
+export function bodyOf(content: string): string {
+  const m = content.match(FRONTMATTER)
+  return m ? content.slice(m[0].length) : content
+}
+
+/**
+ * One frontmatter value as written. This is NOT a YAML parser, and its scope is frozen
+ * — it reads exactly three things and keeps everything else verbatim:
+ *   1. a trailing comment: `#` with whitespace before it and after it (`value  # note`);
+ *      `Fix for bug #42` is prose and stays whole
+ *   2. a double-quoted value whose closing quote ends the value (`\"` and `\\` unescaped)
+ *   3. a single-quoted value whose closing quote ends the value (`''` unescaped)
+ * Anything outside that — block scalars, flow mappings, anchors, a quote that does not
+ * wrap the whole value — is returned as written, and that is by design, not a bug:
+ * a page titled `"Merged" does not equal "landed" — …` must keep its whole title.
+ */
+function yamlScalar(raw: string): string {
+  const v = raw.trim()
+  const double = v.match(/^"((?:[^"\\]|\\.)*)"\s*(?:#.*)?$/)
+  if (double) return double[1].replace(/\\(["\\])/g, "$1")
+  const single = v.match(/^'((?:[^']|'')*)'\s*(?:#.*)?$/)
+  if (single) return single[1].replace(/''/g, "'")
+  return v.replace(/(^|\s+)#(\s.*)?$/, "").trim()
+}
+
+/** Scalar frontmatter value; null when the key is absent or its value is empty. */
+export function fmValue(fm: string, key: string): string | null {
+  const m = fm.match(new RegExp(`^${key}:[ \\t]*(.*)$`, "m"))
+  return (m && yamlScalar(m[1])) || null
+}
+
+/** Tags from frontmatter — inline `[a, b]` or a YAML block list; trailing comments ignored. */
+export function parseTags(fm: string): string[] {
+  const inline = fm.match(/^tags:[ \t]*\[([^\]]*)\]/m)
+  if (inline) return inline[1].split(",").map(yamlScalar).filter(Boolean)
+  // Items may be indented or not — `tags:\n- a\n- b` is valid YAML and what many
+  // editors emit. The run ends at the first line that is not a `- item`.
+  const block = fm.match(/^tags:[ \t]*(?:#.*)?\n((?:[ \t]*-(?:[ \t].*)?(?:\n|$))+)/m)
+  if (!block) return []
+  return block[1]
+    .split("\n")
+    .map((l) => yamlScalar(l.replace(/^[ \t]*-[ \t]*/, "")))
+    .filter(Boolean)
+}
+
+// ─── index.md parsing (pure) ──────────────────────────────
+
+// One index entry: `- [[slug]] — summary` (Overview, category, and Sources lines all
+// share this shape). The slug may carry an optional `|Display` alias. The separator is
+// the em-dash with single surrounding spaces, exactly as map's buildIndex emits it; we
+// split on the FIRST such separator so a summary may itself contain " — ".
+const INDEX_ENTRY = /^- \[\[([^\]|]+)(?:\|[^\]]*)?\]\] — (.+)$/
+
+/**
+ * Parse an existing index.md into a `slug -> summary` map. The one-liner in index.md is
+ * human-owned content (often hand-curated and richer than a page's opening sentence), so
+ * a rebuild harvests these to preserve them rather than re-flattening from page bodies.
+ * First occurrence of a slug wins; non-entry lines (headings, separators, prose) are
+ * ignored. Returns an empty map for empty/absent content (first-run safety).
+ */
+export function parseIndexSummaries(indexContent: string): Map<string, string> {
+  const summaries = new Map<string, string>()
+  for (const line of indexContent.split(/\r?\n/)) {
+    const m = line.match(INDEX_ENTRY)
+    if (m && !summaries.has(m[1])) summaries.set(m[1], m[2])
+  }
+  return summaries
+}
+
+/**
+ * What index.md costs to read. Every operation reads it first, so its size is the KB's
+ * fixed per-operation overhead — and that is driven by one-liner length, not line count.
+ * `long` lists entries over `oneLinerMaxChars`, longest first. Shared by map's Stats
+ * block and lint's index-size check.
+ */
+export function indexStats(
+  indexContent: string,
+  oneLinerMaxChars: number,
+): { bytes: number; lines: number; entries: number; long: Array<{ slug: string; chars: number }> } {
+  const entries = [...parseIndexSummaries(indexContent)].map(([slug, summary]) => ({
+    slug,
+    chars: summary.length,
+  }))
+  return {
+    bytes: Buffer.byteLength(indexContent, "utf8"),
+    lines: lineCount(indexContent),
+    entries: entries.length,
+    long: entries.filter((e) => e.chars > oneLinerMaxChars).sort((a, b) => b.chars - a.chars),
+  }
 }
 
 // ─── Formatting ───────────────────────────────────────────

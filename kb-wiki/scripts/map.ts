@@ -15,7 +15,25 @@
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import { config, discoverCategories } from "./lib/config.ts"
-import { readAllWikiPages, appendLog, todayDate, isLogFile, readText, writeText, isDirectRun } from "./lib/kb.ts"
+import {
+  readAllWikiPages,
+  appendLog,
+  todayDate,
+  isLogFile,
+  readText,
+  writeText,
+  isDirectRun,
+  lineCount,
+  frontmatterOf,
+  bodyOf,
+  fmValue,
+  parseTags,
+  parseIndexSummaries,
+  indexStats,
+} from "./lib/kb.ts"
+
+// Defined in lib/kb.ts so lint can use them without importing this entry script.
+export { parseIndexSummaries, indexStats }
 // NOTE: ./lib/ai (which imports @anthropic-ai/sdk) is intentionally NOT imported at the top
 // level. The default deterministic rebuild must run with zero SDK dependency; only the
 // --deep LLM path loads it, lazily, inside main(). A static import here would make the SDK
@@ -41,17 +59,12 @@ export function parsePage(relativePath: string, content: string): PageInfo {
   const parts = relativePath.split("/")
   const category = parts.length > 1 ? parts[0] : "root"
 
-  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/)
-  const fm = fmMatch?.[1] ?? ""
-
-  const titleMatch =
-    fm.match(/title:\s*"?(.+?)"?\s*$/m) ?? content.match(/^# (.+)$/m)
-  const title = titleMatch?.[1] ?? slug
-
-  const tagsMatch = fm.match(/tags:\s*\[(.+)\]/)
-  const tags = tagsMatch
-    ? tagsMatch[1].split(",").map((t) => t.trim().replace(/[\[\]"']/g, ""))
-    : []
+  // Every field goes through the one frontmatter parser lint also uses (lib/kb.ts):
+  // CRLF pages, `# comments`, quoted values, and block-list tags must read the same in
+  // both scripts, or the index/MOC and the lint report describe different pages.
+  const fm = frontmatterOf(content)
+  const title = fmValue(fm, "title") ?? content.match(/^# (.+)$/m)?.[1].trim() ?? slug
+  const tags = parseTags(fm)
 
   // Summary precedence — this is the per-page EXTRACTED value only. The index/MOC
   // emitter prefers a preserved curated one-liner over this (see resolveSummary), so a
@@ -61,13 +74,9 @@ export function parsePage(relativePath: string, content: string): PageInfo {
   // 2. fallback: first meaningful body paragraph — covers legacy pages without the
   //    field and the summaries/ ledger pages (whose frontmatter carries no `summary`).
   // Body is scanned after the frontmatter block so other frontmatter keys never leak in.
-  let summary = ""
-  const summaryMatch = fm.match(/^summary:\s*"?(.+?)"?\s*$/m)
-  if (summaryMatch) {
-    summary = summaryMatch[1].trim()
-  } else {
-    const body = fmMatch ? content.slice(fmMatch[0].length) : content
-    for (const line of body.split("\n")) {
+  let summary = fmValue(fm, "summary") ?? ""
+  if (!summary) {
+    for (const line of bodyOf(content).split("\n")) {
       const trimmed = line.trim()
       if (
         trimmed &&
@@ -90,28 +99,6 @@ export function parsePage(relativePath: string, content: string): PageInfo {
 }
 
 // ─── Curated-summary preservation ─────────────────────────
-
-// One index entry: `- [[slug]] — summary` (Overview, category, and Sources lines all
-// share this shape). The slug may carry an optional `|Display` alias. The separator is
-// the em-dash with single surrounding spaces, exactly as buildIndex emits it; we split
-// on the FIRST such separator so a summary may itself contain " — ".
-const INDEX_ENTRY = /^- \[\[([^\]|]+)(?:\|[^\]]*)?\]\] — (.+)$/
-
-/**
- * Parse an existing index.md into a `slug -> summary` map. The one-liner in index.md is
- * human-owned content (often hand-curated and richer than a page's opening sentence), so
- * a rebuild harvests these to preserve them rather than re-flattening from page bodies.
- * First occurrence of a slug wins; non-entry lines (headings, separators, prose) are
- * ignored. Returns an empty map for empty/absent content (first-run safety).
- */
-export function parseIndexSummaries(indexContent: string): Map<string, string> {
-  const summaries = new Map<string, string>()
-  for (const line of indexContent.split("\n")) {
-    const m = line.match(INDEX_ENTRY)
-    if (m && !summaries.has(m[1])) summaries.set(m[1], m[2])
-  }
-  return summaries
-}
 
 /**
  * Pick the one-liner for a page: a non-empty preserved (curated) summary wins verbatim;
@@ -485,6 +472,21 @@ async function main() {
   console.log(`Total links:    ${totalLinks}`)
   console.log(`Avg links/page: ${(totalLinks / (contentPages.length || 1)).toFixed(1)}`)
   console.log(`Orphan pages:   ${orphans.length}`)
+
+  // Size stats — the same thresholds lint enforces (oversized, index-size), printed on
+  // every rebuild so growth is visible before it becomes a lint finding.
+  const { pageInfoLines, pageWarnLines, oneLinerMaxChars } = config.lint
+  const pageLines = contentPages.map((p) => lineCount(p.content)).sort((a, b) => a - b)
+  const index = indexStats(indexContent, oneLinerMaxChars)
+  console.log(
+    `Page lines:     median ${pageLines[Math.floor(pageLines.length / 2)] ?? 0}` +
+      ` · >${pageInfoLines}: ${pageLines.filter((n) => n > pageInfoLines).length}` +
+      ` · >${pageWarnLines}: ${pageLines.filter((n) => n > pageWarnLines).length}`,
+  )
+  console.log(
+    `Index:          ${index.lines} lines, ${(index.bytes / 1000).toFixed(1)} KB` +
+      ` · one-liners >${oneLinerMaxChars} chars: ${index.long.length} of ${index.entries}`,
+  )
 
   // LLM cross-link discovery
   let injectedLinks: string[] = []

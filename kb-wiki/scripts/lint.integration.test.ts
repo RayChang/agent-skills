@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test"
-import { mkdtemp, rm, mkdir, writeFile, cp } from "fs/promises"
+import { mkdtemp, rm, mkdir, writeFile, cp, chmod } from "fs/promises"
 import { existsSync } from "fs"
 import { tmpdir } from "os"
 import { resolve, join, dirname } from "path"
@@ -131,6 +131,94 @@ test("lint --deep with the SDK absent fails actionably after completing structur
     expect(stderr.toLowerCase()).toContain("--deep")
     // structural findings still reported despite the missing SDK
     expect(stdout).toContain("Wiki Health Check Report")
+  } finally {
+    await rm(d, { recursive: true, force: true })
+  }
+})
+
+// ─── Raw-drift wiring: the hash is computed from the real file bytes ─────────
+
+test("lint flags a raw source edited after ingest, and stays silent when the hash matches", async () => {
+  const d = await mkdtemp(join(tmpdir(), "kblint-"))
+  try {
+    await seedMinimalKb(d)
+    await mkdir(join(d, "kb/raw/sources"), { recursive: true })
+    await mkdir(join(d, "kb/wiki/summaries"), { recursive: true })
+    await writeFile(join(d, "kb/raw/sources/report.md"), "original text\n")
+    const sha256 = new Bun.CryptoHasher("sha256").update("original text\n").digest("hex")
+    await writeFile(
+      join(d, "kb/wiki/summaries/report.md"),
+      `---\nsource: report.md\nsha256: ${sha256}\ningested: 2026-10-06\ntags: [a]\n---\n\n# Report — Summary\n\n- takeaway\n`,
+    )
+
+    const clean = await run(lintPath, d)
+    expect(clean.exitCode).toBe(0)
+    expect(clean.stdout).not.toContain("raw-drift")
+
+    await writeFile(join(d, "kb/raw/sources/report.md"), "edited after ingest\n")
+    const drifted = await run(lintPath, d)
+    expect(drifted.exitCode).toBe(0) // a warning, not an error
+    expect(drifted.stdout).toContain("## raw-drift")
+    expect(drifted.stdout).toContain("sha256 mismatch: raw/sources/report.md")
+  } finally {
+    await rm(d, { recursive: true, force: true })
+  }
+})
+
+test("an unreadable raw file never aborts lint: ignored when no hash is recorded, a warning when one is", async () => {
+  // Regression: lint hashed every file under raw/sources/ up front, so one PDF without
+  // read permission killed the run with a Fatal error and no report — in a KB where no
+  // summary recorded a hash at all.
+  const d = await mkdtemp(join(tmpdir(), "kblint-"))
+  const locked = join(d, "kb/raw/sources/locked.pdf")
+  try {
+    await seedMinimalKb(d)
+    await mkdir(join(d, "kb/raw/sources"), { recursive: true })
+    await mkdir(join(d, "kb/wiki/summaries"), { recursive: true })
+    await writeFile(locked, "binary")
+    await chmod(locked, 0o000)
+    await writeFile(
+      join(d, "kb/wiki/summaries/locked.md"),
+      `---\nsource: locked.pdf\ningested: 2026-10-06\ntags: [a]\n---\n\n# Locked — Summary\n\n- takeaway\n`,
+    )
+
+    const noHash = await run(lintPath, d)
+    expect(noHash.stderr).not.toContain("Fatal")
+    expect(noHash.exitCode).toBe(0)
+    expect(noHash.stdout).toContain("Wiki Health Check Report")
+    expect(noHash.stdout).not.toContain("raw-drift")
+
+    await writeFile(
+      join(d, "kb/wiki/summaries/locked.md"),
+      `---\nsource: locked.pdf\nsha256: ${"a".repeat(64)}\ningested: 2026-10-06\ntags: [a]\n---\n\n# Locked — Summary\n\n- takeaway\n`,
+    )
+    const withHash = await run(lintPath, d)
+    expect(withHash.stderr).not.toContain("Fatal")
+    expect(withHash.exitCode).toBe(0)
+    expect(withHash.stdout).toContain("Cannot read raw/sources/locked.pdf (EACCES)")
+  } finally {
+    await chmod(locked, 0o600).catch(() => {})
+    await rm(d, { recursive: true, force: true })
+  }
+})
+
+// ─── CRLF index: a rebuild must not discard curated one-liners ───────────────
+
+test("map preserves hand-written one-liners when index.md was saved with CRLF line endings", async () => {
+  // The one-liners in index.md are the KB's human-owned asset. A Windows editor
+  // converting the file to CRLF used to make every entry unparseable, so the next
+  // rebuild treated each page as new and overwrote them all.
+  const d = await mkdtemp(join(tmpdir(), "kbmap-"))
+  try {
+    await seedMinimalKb(d)
+    await writeFile(
+      join(d, "kb/wiki/index.md"),
+      "# Demo Wiki — Index\r\n\r\n## Concepts (1)\r\n- [[concepts/x]] — hand-written line that must survive\r\n",
+    )
+    const { exitCode } = await run(mapPath, d)
+    expect(exitCode).toBe(0)
+    const rebuilt = await Bun.file(join(d, "kb/wiki/index.md")).text()
+    expect(rebuilt).toContain("- [[concepts/x]] — hand-written line that must survive")
   } finally {
     await rm(d, { recursive: true, force: true })
   }

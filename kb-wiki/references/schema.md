@@ -20,7 +20,7 @@ kb/
 └── schema.md       # Project-specific KB conventions (copy from skill asset)
 ```
 
-Categories are suggestions — adapt to the project's domain.
+Categories are suggestions — adapt to the project's domain. Wiki files are stored with LF line endings: the scripts read CRLF, and write LF whenever they rewrite a file.
 
 ## Page Format
 
@@ -36,6 +36,8 @@ status: seedling | developing | mature
 sources: [filename in raw/sources, or URL]
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
+contested: true                              # optional — a Status: Disputed block is open on this page
+contradictions: ["[[category/other-page]]"]   # optional — the page(s) it conflicts with
 ---
 
 # Page Title
@@ -52,14 +54,33 @@ distinct from the page's own synthesis (boundary marker; see Trust Tiers).
 
 The `summary` field is the page's in-place abstract: it makes a page self-orienting when read in isolation (without first reading `index.md`), and `kb:map` pulls from it when **first** writing a page's one-line entry in `index.md`. Existing index one-liners are human-owned and preserved verbatim on a default run — run `kb:map --regen-summaries` to re-pull this field into the index. Keep it to a single sentence describing what the page *establishes*, not a teaser.
 
+## Status Blocks (marking a claim in place)
+
+A claim that turned out wrong or contested is marked where it stands, directly under the claim (indented inside the list item when the claim is a bullet) — never silently rewritten or left to a lint report that gets pruned:
+
+```markdown
+The cache TTL is 15 minutes.
+> **Status: Outdated** (2026-10-06) — was 5 minutes; now 15 (`config.ts:12`)
+
+Sessions are stored in Redis.
+> **Status: Disputed** — conflicts with [[architecture/sessions]]: Redis vs Postgres
+```
+
+- **Outdated** — written when Verify or a newer source corrects a claim. Needs the `(YYYY-MM-DD)` date and what changed. It is a breadcrumb, not an archive: one line, deleted on a later touch once the old value no longer matters.
+- **Disputed** — written when two pages (or a page and a source) disagree and a human has not ruled. Needs what it conflicts with. Put the block on **both** pages and set `contested: true` and `contradictions` in their frontmatter; remove all three once the human decides.
+- Lint `status-block` flags an Outdated block with no date and either block with no explanation.
+- A page that only *shows* the format must put the example in a fenced code block — lint skips fences and checks every other `>` line, indented or not.
+
 ## Summary Page Format (wiki/summaries/)
 
 One per ingested source, written during Ingest. Brief by design — takeaways and pointers, not a rewrite of the source:
 
 ```markdown
 ---
-source: filename in raw/sources, or URL
+source: path under raw/sources (the full path when two folders share a filename), or URL
 origin: external | self        # optional — third-party material vs own design notes/decisions
+sha256: <hex digest>           # optional — `shasum -a 256` (or `sha256sum`) of the raw file at ingest; Lint `raw-drift` re-checks it
+source_url: https://…          # optional — where the raw file came from; with sha256, how Ingest spots a re-dropped source
 ingested: YYYY-MM-DD
 backfilled: true               # optional — summary written during Migrate, not at original ingest time
 tags: [tag1, tag2]
@@ -103,6 +124,38 @@ Summaries are excluded from MOCs and category listings; they appear in the index
 ```
 
 Each one-liner is human-owned: `kb:map` preserves an existing index entry's summary verbatim and only extracts one for a page new to the index (or with no prior summary). Run `kb:map --regen-summaries` to re-extract them all from page bodies.
+
+A one-liner is one sentence. Every operation reads `index.md` first, so its size is a cost paid each time — and it is driven by one-liner length, not page count (a 217-line index of paragraph-length entries measured 85 KB). `kb:map` prints the index size on every rebuild; Lint `index-size` reports when it passes the budget.
+
+## Tag Vocabulary (optional, in the project's kb/schema.md)
+
+Tags are free-form by default. A project that wants a controlled vocabulary lists it in its own `kb/schema.md` under a `## Tag Vocabulary` heading, one tag per bullet:
+
+```markdown
+## Tag Vocabulary
+
+- routing
+- `i18n` — translations, locale routing
+```
+
+The list is human-owned (meta tier). Once it has at least one bullet, Lint `tag-audit` warns on any page tag outside it; an empty or absent section enforces nothing. Either way, tags that differ only by case or separators (`hostDirectives` / `hostdirectives` / `host-directives`) are reported as near-duplicates.
+
+## Lint Categories (deterministic hygiene checks)
+
+Run by `lint.ts` with no LLM and no tokens. They report only — fixes follow the tiers in the SKILL's Lint section.
+
+| Category | Severity | Fires when | Env override |
+|---|---|---|---|
+| `oversized` | info / warning | a content page exceeds 400 / 800 lines | `KB_PAGE_INFO_LINES`, `KB_PAGE_WARN_LINES` |
+| `index-size` | warning | `index.md` exceeds 50 KB — one finding naming the longest one-liners | `KB_INDEX_MAX_BYTES` |
+| `index-size` | info | the index is under budget but some one-liners exceed 200 chars | `KB_ONE_LINER_MAX_CHARS` |
+| `tag-audit` | warning | a page uses a tag outside the project's Tag Vocabulary (only if one is listed) | — |
+| `tag-audit` | info | two tags differ only by case or separators | — |
+| `raw-drift` | warning | a summary's recorded `sha256` no longer matches its raw file, the file is gone or unreadable, or the recorded value is not a 64-character hex digest | — |
+| `status-block` | warning | an Outdated block has no date, or either Status block has no explanation | — |
+| `seedling-age` | info | `status: seedling` and `created` is more than 90 days ago | `KB_SEEDLING_DAYS` |
+
+Fields these checks read are optional: a summary without `sha256`, a schema without a Tag Vocabulary, and a page without Status blocks are simply skipped, so a KB created before they existed lints exactly as before. Only raw files whose summary recorded a `sha256` are hashed; give `source:` the full path under `raw/sources/` when two folders hold a file of the same name.
 
 ## log/ Format (one file per developer)
 

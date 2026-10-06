@@ -198,3 +198,72 @@ test("normalizeSuggestions: caps at MAX_SUGGESTIONS (schema cannot express maxIt
   const many = Array.from({ length: 30 }, (_, i) => ({ source: "a/x", target: `a/y${i}`, reason: "r" }))
   expect(normalizeSuggestions(many)).toHaveLength(20)
 })
+
+// ─── Size stats ───────────────────────────────────────────
+
+import { indexStats } from "./map"
+
+test("indexStats: counts entries and lists over-long one-liners, longest first", () => {
+  const index = [
+    "# Demo Wiki — Index",
+    "",
+    "## Concepts (3)",
+    `- [[concepts/a]] — ${"x".repeat(30)}`,
+    `- [[concepts/b|Alias]] — ${"y".repeat(50)}`,
+    "- [[concepts/c]] — short",
+    "",
+  ].join("\n")
+  const stats = indexStats(index, 20)
+  expect(stats.entries).toBe(3)
+  expect(stats.lines).toBe(6)
+  expect(stats.long).toEqual([
+    { slug: "concepts/b", chars: 50 },
+    { slug: "concepts/a", chars: 30 },
+  ])
+})
+
+test("indexStats: size is bytes, not characters — CJK one-liners cost three bytes each", () => {
+  // The index budget is what an agent pays to read the file; a character count would
+  // under-report a Chinese-language KB by 3x.
+  const stats = indexStats("- [[concepts/a]] — 知識庫", 200)
+  expect(stats.bytes).toBe(Buffer.byteLength("- [[concepts/a]] — 知識庫", "utf8"))
+  expect(stats.bytes).toBeGreaterThan("- [[concepts/a]] — 知識庫".length)
+  expect(stats.long).toEqual([])
+})
+
+test("parsePage: tags written as a YAML block list are read (same parser as lint)", () => {
+  // Regression: map only understood `tags: [a, b]`, so a block-list page had tags in the
+  // lint report but no Tags line in its MOC.
+  const page = parsePage(
+    "concepts/widget.md",
+    `---\ntitle: Widget\ncategory: concepts\ntags:\n  - alpha\n  - "beta"\n---\n\nBody paragraph long enough to be picked up.`,
+  )
+  expect(page.tags).toEqual(["alpha", "beta"])
+})
+
+test("parsePage: a CRLF page yields its real title and summary, never a frontmatter line", () => {
+  // Regression: map's own LF-only matcher missed the frontmatter of a CRLF page, so the
+  // whole file was scanned as body and the literal `summary: …` line became the one-liner.
+  const page = parsePage(
+    "concepts/widget.md",
+    "---\r\ntitle: Widget\r\nsummary: What a widget is.\r\ncategory: concepts\r\ntags: [a]\r\n---\r\n\r\n# Widget\r\n\r\nBody paragraph long enough to be picked up by the fallback.\r\n",
+  )
+  expect(page.title).toBe("Widget")
+  expect(page.summary).toBe("What a widget is.")
+  expect(page.tags).toEqual(["a"])
+})
+
+test("parsePage: a trailing comment is not part of the title or summary (same reading as lint)", () => {
+  const page = parsePage(
+    "concepts/widget.md",
+    `---\ntitle: Widget  # working title\nsummary: "What a widget is."  # one sentence\ncategory: concepts\ntags: [a]\n---\n\nBody.`,
+  )
+  expect(page.title).toBe("Widget")
+  expect(page.summary).toBe("What a widget is.")
+})
+
+test("parsePage: without frontmatter, the body fallback still skips headings", () => {
+  const page = parsePage("concepts/plain.md", "# Plain Page\n\nThis first body paragraph is long enough to be picked.")
+  expect(page.title).toBe("Plain Page")
+  expect(page.summary).toBe("This first body paragraph is long enough to be picked.")
+})
