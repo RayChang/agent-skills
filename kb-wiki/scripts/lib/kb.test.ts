@@ -214,3 +214,16 @@ test("lineCount: matches wc -l for newline-terminated text and counts an untermi
   expect(lineCount("a\nb")).toBe(2)
   expect(lineCount("a\n\n")).toBe(2)
 })
+
+// ─── frontmatter ──────────────────────────────────────────
+
+import { frontmatterOf, fmValue, parseTags } from "./kb"
+
+test("frontmatterOf: a CRLF page parses the same as an LF one", () => {
+  // A page saved with Windows line endings used to read as having no frontmatter, so
+  // every frontmatter-based check silently skipped it.
+  const fm = frontmatterOf("---\r\ntitle: T\r\nstatus: seedling\r\ntags: [a, b]\r\n---\r\n\r\n# T\r\n")
+  expect(fmValue(fm, "status")).toBe("seedling")
+  expect(parseTags(fm)).toEqual(["a", "b"])
+  expect(frontmatterOf("# No frontmatter here\n")).toBe("")
+})

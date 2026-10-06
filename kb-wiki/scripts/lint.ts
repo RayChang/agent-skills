@@ -28,9 +28,11 @@ import {
   readText,
   writeText,
   isDirectRun,
+  frontmatterOf,
+  fmValue,
+  parseTags,
+  indexStats,
 } from "./lib/kb.ts"
-// Pure helper only — map.ts runs main() solely when it is the entry point.
-import { indexStats } from "./map.ts"
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -348,30 +350,6 @@ export function checkInjectionMarkers(
 type Page = { relativePath: string; content: string }
 type Limits = typeof config.lint
 
-function frontmatterOf(content: string): string {
-  return content.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? ""
-}
-
-/** Scalar frontmatter value with surrounding quotes stripped; null when absent or empty. */
-function fmValue(fm: string, key: string): string | null {
-  const m = fm.match(new RegExp(`^${key}:[ \\t]*(.*)$`, "m"))
-  const v = m?.[1].trim().replace(/^["']|["']$/g, "")
-  return v ? v : null
-}
-
-/** Tags from frontmatter — inline `[a, b]` or a YAML block list. */
-export function parseTags(fm: string): string[] {
-  const clean = (t: string) => t.trim().replace(/^["']|["']$/g, "")
-  const inline = fm.match(/^tags:[ \t]*\[(.*)\][ \t]*$/m)
-  if (inline) return inline[1].split(",").map(clean).filter(Boolean)
-  const block = fm.match(/^tags:[ \t]*\n((?:[ \t]+-[ \t]*.*(?:\n|$))+)/m)
-  if (!block) return []
-  return block[1]
-    .split("\n")
-    .map((l) => clean(l.replace(/^[ \t]+-[ \t]*/, "")))
-    .filter(Boolean)
-}
-
 export function checkOversizedPages(pages: Page[], limits: Limits = config.lint): LintIssue[] {
   const issues: LintIssue[] = []
   for (const page of pages) {
@@ -456,10 +434,23 @@ export function parseTagVocabulary(schema: string | null): Set<string> {
   return vocabulary
 }
 
-/** Collapse case, separators, and a plural `s` so spelling variants of one tag collide. */
-function tagKey(tag: string): string {
-  const k = tag.toLowerCase().replace(/[-_\s]/g, "")
-  return k.length > 3 && k.endsWith("s") ? k.slice(0, -1) : k
+/** Case and separators collapsed: `hostDirectives` / `host-directives` are one tag spelled twice. */
+function spellingKey(tag: string): string {
+  return tag.toLowerCase().replace(/[-_\s]/g, "")
+}
+
+// Words whose final `s` is not a plural, where the s-less form is a different thing.
+const NOT_PLURAL = new Set(["https", "canvas"])
+
+/**
+ * The singular a tag would be the plural of, or null when it does not look like one.
+ * Deliberately narrow — a stem under 4 letters (`news` → `new`), a double `s`
+ * (`class`), and the known non-plurals are left alone, because a wrong "merge these"
+ * costs more than a missed pair.
+ */
+function singularOf(key: string): string | null {
+  if (!key.endsWith("s") || key.endsWith("ss") || key.length < 5 || NOT_PLURAL.has(key)) return null
+  return key.slice(0, -1)
 }
 
 export function checkTags(pages: Page[], vocabulary: Set<string>): LintIssue[] {
@@ -483,75 +474,110 @@ export function checkTags(pages: Page[], vocabulary: Set<string>): LintIssue[] {
     }
   }
 
-  const variants = new Map<string, string[]>()
+  const spellings = new Map<string, string[]>()
   for (const tag of uses.keys()) {
-    const key = tagKey(tag)
-    variants.set(key, [...(variants.get(key) ?? []), tag])
+    const key = spellingKey(tag)
+    spellings.set(key, [...(spellings.get(key) ?? []), tag])
   }
-  for (const group of variants.values()) {
-    if (group.length < 2) continue
-    const listed = group
+  const listed = (tags: string[]) =>
+    tags
       .sort()
       .map((t) => `\`${t}\` (${uses.get(t)})`)
       .join(", ")
+
+  for (const group of spellings.values()) {
+    if (group.length < 2) continue
     issues.push({
       severity: "info",
       category: "tag-audit",
-      message: `Near-duplicate tags: ${listed} — pick one spelling`,
+      message: `Near-duplicate tags: ${listed(group)} — pick one spelling`,
+    })
+  }
+  // A plural pair is reported only when BOTH forms are in use, and as a question:
+  // the script cannot know whether `gate` and `gates` mean the same thing here.
+  for (const [key, group] of spellings) {
+    const singular = singularOf(key)
+    const stem = singular ? spellings.get(singular) : undefined
+    if (!stem) continue
+    issues.push({
+      severity: "info",
+      category: "tag-audit",
+      message: `Possible singular/plural pair: ${listed([...stem, ...group])} — merge them if they mean the same thing`,
     })
   }
 
   return issues
 }
 
-/** Match a summary's `source:` value to a file under raw/sources/ (exact path, else a unique basename). */
-function resolveRawSource(source: string, rawPaths: string[]): string | null {
-  const rel = source.replace(/^\.\//, "").replace(/^kb\//, "").replace(/^raw\/sources\//, "")
-  if (rawPaths.includes(rel)) return rel
-  const base = rel.split("/").pop()
-  const sameName = rawPaths.filter((p) => p.split("/").pop() === base)
-  return sameName.length === 1 ? sameName[0] : null
-}
-
 /**
- * "Never modify or delete anything under kb/raw/" was a prohibition with no detector.
- * A summary that recorded its source's sha256 at ingest makes a later edit, move, or
- * deletion visible. Summaries without the field (every pre-existing one) are skipped.
+ * Summaries that recorded a sha256, each with the raw files its `source:` could mean:
+ * the exact path if it exists, else every file with that basename (a bare filename is
+ * ambiguous once two folders hold a `notes.md`). Skipped: no hash recorded (every
+ * summary that predates the field), a URL source (no local file), and a list of
+ * sources (one hash cannot be attributed to several files).
  */
-export function checkRawDrift(pages: Page[], rawHashes: Map<string, string>): LintIssue[] {
-  const issues: LintIssue[] = []
-  const rawPaths = [...rawHashes.keys()]
-
+function recordedSources(
+  pages: Page[],
+  rawFiles: string[],
+): Array<{ file: string; source: string; recorded: string; candidates: string[] }> {
+  const out: Array<{ file: string; source: string; recorded: string; candidates: string[] }> = []
   for (const page of pages) {
     if (!page.relativePath.startsWith("summaries/")) continue
     const fm = frontmatterOf(page.content)
     const recorded = fmValue(fm, "sha256")
     const source = fmValue(fm, "source")
-    // A URL source has no local file to hash; nothing to compare.
-    if (!recorded || !source || /^https?:\/\//i.test(source)) continue
+    if (!recorded || !source || /^https?:\/\//i.test(source) || source.startsWith("[")) continue
 
-    const rawPath = resolveRawSource(source, rawPaths)
-    if (!rawPath) {
-      issues.push({
-        severity: "warning",
-        category: "raw-drift",
-        message: `Summary records a sha256 for "${source}" but that file is no longer in raw/sources/ — raw files must not be moved or deleted`,
-        file: page.relativePath,
-      })
-    } else if (rawHashes.get(rawPath) !== recorded.toLowerCase()) {
-      issues.push({
-        severity: "warning",
-        category: "raw-drift",
-        message: `Raw source changed since ingest (sha256 mismatch: raw/sources/${rawPath}) — re-review this summary and the pages it touched`,
-        file: page.relativePath,
-      })
+    const rel = source.replace(/^\.\//, "").replace(/^kb\//, "").replace(/^raw\/sources\//, "")
+    const base = rel.split("/").pop()
+    const candidates = rawFiles.includes(rel)
+      ? [rel]
+      : rawFiles.filter((p) => p.split("/").pop() === base)
+    out.push({ file: page.relativePath, source, recorded: recorded.toLowerCase(), candidates })
+  }
+  return out
+}
+
+/** The raw files lint must hash for the raw-drift check — nothing else is read. */
+export function sourcesNeedingHash(pages: Page[], rawFiles: string[]): string[] {
+  return [...new Set(recordedSources(pages, rawFiles).flatMap((r) => r.candidates))]
+}
+
+/**
+ * "Never modify or delete anything under kb/raw/" was a prohibition with no detector.
+ * A summary that recorded its source's sha256 at ingest makes a later edit, move, or
+ * deletion visible. `rawHashes` maps a raw path to its current hash, or null when the
+ * file could not be read.
+ */
+export function checkRawDrift(
+  pages: Page[],
+  rawFiles: string[],
+  rawHashes: Map<string, string | null>,
+): LintIssue[] {
+  const issues: LintIssue[] = []
+  const warn = (file: string, message: string) =>
+    issues.push({ severity: "warning", category: "raw-drift", message, file })
+
+  for (const { file, source, recorded, candidates } of recordedSources(pages, rawFiles)) {
+    if (candidates.length === 0) {
+      warn(file, `Summary records a sha256 for "${source}" but that file is no longer in raw/sources/ — raw files must not be moved or deleted`)
+    } else if (candidates.some((c) => rawHashes.get(c) === recorded)) {
+      continue // some file by that name is byte-identical to what was ingested
+    } else if (candidates.some((c) => rawHashes.get(c) == null)) {
+      warn(file, `Cannot read raw/sources/${candidates.find((c) => rawHashes.get(c) == null)} to verify its recorded sha256 — check the file's permissions`)
+    } else if (candidates.length === 1) {
+      warn(file, `Raw source changed since ingest (sha256 mismatch: raw/sources/${candidates[0]}) — re-review this summary and the pages it touched`)
+    } else {
+      warn(file, `None of the ${candidates.length} raw files named "${source}" matches the recorded sha256 — the source changed, or \`source:\` should give its full path under raw/sources/`)
     }
   }
 
   return issues
 }
 
-const STATUS_BLOCK = /^>\s*\*\*Status:\s*(Outdated|Disputed)\*\*(.*)$/i
+// Leading whitespace allowed: most wiki claims are bullets, and "directly under the
+// claim" then means a blockquote indented inside the list item.
+const STATUS_BLOCK = /^\s*>\s*\*\*Status:\s*(Outdated|Disputed)\*\*(.*)$/i
 
 /**
  * `> **Status: Outdated** (YYYY-MM-DD) — why` and `> **Status: Disputed** — what it
@@ -576,9 +602,9 @@ export function checkStatusBlocks(pages: Page[]): LintIssue[] {
       const date = m[2].match(/^\s*\(\d{4}-\d{2}-\d{2}\)/)
       let explained = m[2].slice(date?.[0].length ?? 0).replace(/^[\s—–:.-]+/, "").trim() !== ""
       // The explanation may continue on the following blockquote lines.
-      for (let j = i + 1; !explained && j < lines.length && lines[j].startsWith(">"); j++) {
+      for (let j = i + 1; !explained && j < lines.length && lines[j].trimStart().startsWith(">"); j++) {
         if (STATUS_BLOCK.test(lines[j])) break
-        explained = lines[j].replace(/^>\s*/, "").trim() !== ""
+        explained = lines[j].replace(/^\s*>\s*/, "").trim() !== ""
       }
 
       if (kind === "Outdated" && !date) {
@@ -816,7 +842,8 @@ async function main() {
   const pages = await readAllWikiPages({ includeSummaries: true })
   const rawFiles = await listRawSourceFiles()
   const rawTextSources = await readRawTextSources()
-  const rawHashes = await hashRawSources()
+  // Lazy: only the raw files some summary recorded a sha256 for (usually none).
+  const rawHashes = await hashRawSources(sourcesNeedingHash(pages, rawFiles))
   const schema = existsSync(config.kb.schema) ? await readText(config.kb.schema) : null
   console.log(`Scanning ${pages.length} wiki pages, ${rawFiles.length} raw sources...\n`)
 
@@ -830,7 +857,7 @@ async function main() {
     ...checkOversizedPages(pages),
     ...checkIndexSize(pages),
     ...checkTags(pages, parseTagVocabulary(schema)),
-    ...checkRawDrift(pages, rawHashes),
+    ...checkRawDrift(pages, rawFiles, rawHashes),
     ...checkStatusBlocks(pages),
     ...checkSeedlingAge(pages),
   ]

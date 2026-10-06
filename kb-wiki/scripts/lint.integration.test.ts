@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test"
-import { mkdtemp, rm, mkdir, writeFile, cp } from "fs/promises"
+import { mkdtemp, rm, mkdir, writeFile, cp, chmod } from "fs/promises"
 import { existsSync } from "fs"
 import { tmpdir } from "os"
 import { resolve, join, dirname } from "path"
@@ -161,6 +161,43 @@ test("lint flags a raw source edited after ingest, and stays silent when the has
     expect(drifted.stdout).toContain("## raw-drift")
     expect(drifted.stdout).toContain("sha256 mismatch: raw/sources/report.md")
   } finally {
+    await rm(d, { recursive: true, force: true })
+  }
+})
+
+test("an unreadable raw file never aborts lint: ignored when no hash is recorded, a warning when one is", async () => {
+  // Regression: lint hashed every file under raw/sources/ up front, so one PDF without
+  // read permission killed the run with a Fatal error and no report — in a KB where no
+  // summary recorded a hash at all.
+  const d = await mkdtemp(join(tmpdir(), "kblint-"))
+  const locked = join(d, "kb/raw/sources/locked.pdf")
+  try {
+    await seedMinimalKb(d)
+    await mkdir(join(d, "kb/raw/sources"), { recursive: true })
+    await mkdir(join(d, "kb/wiki/summaries"), { recursive: true })
+    await writeFile(locked, "binary")
+    await chmod(locked, 0o000)
+    await writeFile(
+      join(d, "kb/wiki/summaries/locked.md"),
+      `---\nsource: locked.pdf\ningested: 2026-10-06\ntags: [a]\n---\n\n# Locked — Summary\n\n- takeaway\n`,
+    )
+
+    const noHash = await run(lintPath, d)
+    expect(noHash.stderr).not.toContain("Fatal")
+    expect(noHash.exitCode).toBe(0)
+    expect(noHash.stdout).toContain("Wiki Health Check Report")
+    expect(noHash.stdout).not.toContain("raw-drift")
+
+    await writeFile(
+      join(d, "kb/wiki/summaries/locked.md"),
+      `---\nsource: locked.pdf\nsha256: ${"a".repeat(64)}\ningested: 2026-10-06\ntags: [a]\n---\n\n# Locked — Summary\n\n- takeaway\n`,
+    )
+    const withHash = await run(lintPath, d)
+    expect(withHash.stderr).not.toContain("Fatal")
+    expect(withHash.exitCode).toBe(0)
+    expect(withHash.stdout).toContain("Cannot read raw/sources/locked.pdf")
+  } finally {
+    await chmod(locked, 0o600).catch(() => {})
     await rm(d, { recursive: true, force: true })
   }
 })

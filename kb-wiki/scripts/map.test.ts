@@ -230,3 +230,13 @@ test("indexStats: size is bytes, not characters — CJK one-liners cost three by
   expect(stats.bytes).toBeGreaterThan("- [[concepts/a]] — 知識庫".length)
   expect(stats.long).toEqual([])
 })
+
+test("parsePage: tags written as a YAML block list are read (same parser as lint)", () => {
+  // Regression: map only understood `tags: [a, b]`, so a block-list page had tags in the
+  // lint report but no Tags line in its MOC.
+  const page = parsePage(
+    "concepts/widget.md",
+    `---\ntitle: Widget\ncategory: concepts\ntags:\n  - alpha\n  - "beta"\n---\n\nBody paragraph long enough to be picked up.`,
+  )
+  expect(page.tags).toEqual(["alpha", "beta"])
+})

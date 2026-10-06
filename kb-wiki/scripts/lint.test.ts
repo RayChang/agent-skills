@@ -136,13 +136,14 @@ test("checkInjectionMarkers: pipe-to-shell and exfiltration stay warnings", () =
 import {
   checkOversizedPages,
   checkIndexSize,
-  parseTags,
   parseTagVocabulary,
   checkTags,
   checkRawDrift,
+  sourcesNeedingHash,
   checkStatusBlocks,
   checkSeedlingAge,
 } from "./lint"
+import { parseTags, fmValue, frontmatterOf } from "./lib/kb"
 
 const LIMITS = {
   pageInfoLines: 4,
@@ -211,6 +212,31 @@ test("parseTags: reads inline and block lists, strips quotes", () => {
   expect(parseTags(`tags: []`)).toEqual([])
 })
 
+test("parseTags / fmValue: a trailing YAML comment is not part of the value", () => {
+  // Regression: `tags: [routing]  # see vocabulary` matched neither tag regex, so the
+  // page read as tagless and an unlisted tag slipped past the vocabulary check.
+  expect(parseTags(`tags: [routing, i18n]  # see vocabulary`)).toEqual(["routing", "i18n"])
+  expect(parseTags(`tags:   # controlled\n  - routing  # url handling\n  - i18n`)).toEqual(["routing", "i18n"])
+  expect(fmValue(`sha256: abc123   # optional — recorded at ingest`, "sha256")).toBe("abc123")
+  // A `#` that is not preceded by whitespace, or sits inside quotes, is data.
+  expect(fmValue(`title: C# basics`, "title")).toBe("C# basics")
+  expect(fmValue(`title: "Issue #42 # not a comment"`, "title")).toBe("Issue #42 # not a comment")
+  expect(fmValue(`source:`, "source")).toBeNull()
+})
+
+test("the schema's own summary example parses cleanly (its fields carry # comments)", async () => {
+  // Regression: a summary written by copying this example recorded
+  // `<hex> # optional …` as its hash, so lint reported "source changed" on every run.
+  const reference = await readFile(join(import.meta.dir, "../references/schema.md"), "utf8")
+  const example = reference.match(/```markdown\n(---\nsource:[\s\S]*?\n---)/)?.[1] ?? ""
+  const fm = frontmatterOf(example)
+  expect(fm).toContain("sha256:")
+  for (const key of ["source", "sha256", "source_url", "origin", "ingested", "backfilled"]) {
+    expect(fmValue(fm, key)).not.toContain("#")
+  }
+  expect(parseTags(fm)).toEqual(["tag1", "tag2"])
+})
+
 test("parseTagVocabulary: reads bullets under the heading only, stops at the next heading", () => {
   const schema = [
     "# Demo Knowledge Base — Schema",
@@ -261,20 +287,37 @@ test("checkTags: spelling variants of one tag are reported together with their u
     new Set(),
   )
   expect(issues.map((i) => i.message)).toEqual([
-    "Near-duplicate tags: `design-token` (1), `design-tokens` (2) — pick one spelling",
     "Near-duplicate tags: `hostDirectives` (1), `hostdirectives` (1) — pick one spelling",
+    "Possible singular/plural pair: `design-token` (1), `design-tokens` (2) — merge them if they mean the same thing",
   ])
   for (const issue of issues) expect(issue.severity).toBe("info")
 })
 
+test("checkTags: a trailing s is not assumed to be a plural", () => {
+  // Regression: every tag longer than 3 letters ending in `s` was folded onto its
+  // s-less form, so http/https, new/news and canva/canvas were reported as duplicates.
+  const issues = checkTags(
+    [
+      page("concepts/a.md", fm("tags: [http, new, canva, clas, gate]")),
+      page("concepts/b.md", fm("tags: [https, news, canvas, class, gates]")),
+    ],
+    new Set(),
+  )
+  expect(issues.map((i) => i.message)).toEqual([
+    "Possible singular/plural pair: `gate` (1), `gates` (1) — merge them if they mean the same thing",
+  ])
+})
+
 const summary = (fields: string) => page("summaries/report.md", `---\n${fields}\n---\n\n- takeaway`)
 
-test("checkRawDrift: matching hash is silent; a changed source is a warning", () => {
-  const hashes = new Map([["report.md", "aaa111"]])
-  expect(checkRawDrift([summary("source: report.md\nsha256: AAA111")], hashes)).toEqual([])
-  expect(checkRawDrift([summary("source: raw/sources/report.md\nsha256: aaa111")], hashes)).toEqual([])
+const drift = (summaryFields: string, hashes: Record<string, string | null>) =>
+  checkRawDrift([summary(summaryFields)], Object.keys(hashes), new Map(Object.entries(hashes)))
 
-  const drifted = checkRawDrift([summary("source: report.md\nsha256: bbb222")], hashes)
+test("checkRawDrift: matching hash is silent; a changed source is a warning", () => {
+  expect(drift("source: report.md\nsha256: AAA111", { "report.md": "aaa111" })).toEqual([])
+  expect(drift("source: raw/sources/report.md\nsha256: aaa111", { "report.md": "aaa111" })).toEqual([])
+
+  const drifted = drift("source: report.md\nsha256: bbb222", { "report.md": "aaa111" })
   expect(drifted).toHaveLength(1)
   expect(drifted[0].category).toBe("raw-drift")
   expect(drifted[0].severity).toBe("warning")
@@ -282,23 +325,57 @@ test("checkRawDrift: matching hash is silent; a changed source is a warning", ()
 })
 
 test("checkRawDrift: a recorded hash whose source file is gone is flagged", () => {
-  const issues = checkRawDrift([summary("source: report.md\nsha256: aaa111")], new Map())
+  const issues = drift("source: report.md\nsha256: aaa111", {})
   expect(issues).toHaveLength(1)
   expect(issues[0].message).toContain("no longer in raw/sources/")
 })
 
-test("checkRawDrift: summaries without a hash, and URL sources, are skipped", () => {
+test("checkRawDrift: summaries without a hash, URL sources, and source lists are skipped", () => {
   // Every summary written before the field existed must stay silent — Migrate does
   // not bulk-rewrite, so absence is the normal state, not a defect.
-  const hashes = new Map([["report.md", "aaa111"]])
-  expect(checkRawDrift([summary("source: report.md")], hashes)).toEqual([])
-  expect(checkRawDrift([summary("source: https://example.com/a\nsha256: bbb222")], hashes)).toEqual([])
-  expect(checkRawDrift([page("concepts/x.md", fm("sha256: bbb222"))], hashes)).toEqual([])
+  const hashes = { "report.md": "aaa111" }
+  expect(drift("source: report.md", hashes)).toEqual([])
+  expect(drift("source: https://example.com/a\nsha256: bbb222", hashes)).toEqual([])
+  // One hash cannot be attributed to several files — not "the file was deleted".
+  expect(drift("source: [report.md, other.md]\nsha256: bbb222", hashes)).toEqual([])
+  expect(
+    checkRawDrift([page("concepts/x.md", fm("sha256: bbb222"))], ["report.md"], new Map([["report.md", "aaa111"]])),
+  ).toEqual([])
 })
 
 test("checkRawDrift: a nested source is matched by its unique basename", () => {
-  const hashes = new Map([["2026/report.md", "aaa111"]])
-  expect(checkRawDrift([summary("source: report.md\nsha256: aaa111")], hashes)).toEqual([])
+  expect(drift("source: report.md\nsha256: aaa111", { "2026/report.md": "aaa111" })).toEqual([])
+})
+
+test("checkRawDrift: an ambiguous basename is never reported as a deleted file", () => {
+  // Regression: two folders each holding notes.md made `source: notes.md` resolve to
+  // nothing, and the summary was accused of pointing at a removed raw file.
+  const two = { "2025/notes.md": "aaa111", "2026/notes.md": "ccc333" }
+  expect(drift("source: notes.md\nsha256: ccc333", two)).toEqual([])
+  expect(drift("source: 2025/notes.md\nsha256: aaa111", two)).toEqual([])
+
+  const none = drift("source: notes.md\nsha256: bbb222", two)
+  expect(none).toHaveLength(1)
+  expect(none[0].message).toContain(`None of the 2 raw files named "notes.md"`)
+  expect(none[0].message).not.toContain("no longer in raw/sources/")
+})
+
+test("checkRawDrift: an unreadable source is its own finding, not a mismatch", () => {
+  const issues = drift("source: report.pdf\nsha256: aaa111", { "report.pdf": null })
+  expect(issues).toHaveLength(1)
+  expect(issues[0].message).toContain("Cannot read raw/sources/report.pdf")
+})
+
+test("sourcesNeedingHash: only files a summary recorded a hash for — none in a KB that predates the field", () => {
+  // Regression: lint hashed every raw file on every run, so a 2 GB raw/ directory was
+  // read in full to produce zero findings, and one unreadable file aborted the run.
+  const raw = ["report.md", "2025/notes.md", "2026/notes.md", "huge.pdf"]
+  expect(sourcesNeedingHash([summary("source: report.md")], raw)).toEqual([])
+  expect(sourcesNeedingHash([summary("source: report.md\nsha256: aaa111")], raw)).toEqual(["report.md"])
+  expect(sourcesNeedingHash([summary("source: notes.md\nsha256: aaa111")], raw)).toEqual([
+    "2025/notes.md",
+    "2026/notes.md",
+  ])
 })
 
 test("checkStatusBlocks: well-formed Outdated and Disputed blocks are silent", () => {
@@ -327,6 +404,24 @@ test("checkStatusBlocks: flags a missing date and a missing explanation", () => 
   expect(messages).toEqual([
     "Status: Outdated block has no (YYYY-MM-DD) date",
     "Status: Disputed block has no explanation — say what replaced the claim or what it conflicts with",
+    "Status: Outdated block has no (YYYY-MM-DD) date",
+    "Status: Outdated block has no explanation — say what replaced the claim or what it conflicts with",
+  ])
+})
+
+test("checkStatusBlocks: a block indented under a list item is checked too", () => {
+  // Regression: the pattern was anchored at column 0, but most wiki claims are bullets
+  // and the block sits "directly under the claim" — indented. Those were never checked.
+  const body = [
+    "- The cache TTL is 15 minutes.",
+    "  > **Status: Outdated**",
+    "- Sessions live in Redis.",
+    "  > **Status: Disputed**",
+    "  > conflicts with [[architecture/sessions]]: Redis vs Postgres",
+    "- The limit is 7.",
+    "  > **Status: Outdated** (2026-10-06) — was 5; now 7",
+  ].join("\n")
+  expect(checkStatusBlocks([page("concepts/a.md", body)]).map((i) => i.message)).toEqual([
     "Status: Outdated block has no (YYYY-MM-DD) date",
     "Status: Outdated block has no explanation — say what replaced the claim or what it conflicts with",
   ])

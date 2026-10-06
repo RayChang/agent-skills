@@ -24,7 +24,14 @@ import {
   writeText,
   isDirectRun,
   lineCount,
+  frontmatterOf,
+  parseTags,
+  parseIndexSummaries,
+  indexStats,
 } from "./lib/kb.ts"
+
+// Defined in lib/kb.ts so lint can use them without importing this entry script.
+export { parseIndexSummaries, indexStats }
 // NOTE: ./lib/ai (which imports @anthropic-ai/sdk) is intentionally NOT imported at the top
 // level. The default deterministic rebuild must run with zero SDK dependency; only the
 // --deep LLM path loads it, lazily, inside main(). A static import here would make the SDK
@@ -57,10 +64,9 @@ export function parsePage(relativePath: string, content: string): PageInfo {
     fm.match(/title:\s*"?(.+?)"?\s*$/m) ?? content.match(/^# (.+)$/m)
   const title = titleMatch?.[1] ?? slug
 
-  const tagsMatch = fm.match(/tags:\s*\[(.+)\]/)
-  const tags = tagsMatch
-    ? tagsMatch[1].split(",").map((t) => t.trim().replace(/[\[\]"']/g, ""))
-    : []
+  // Shared with lint: a page whose tags are a YAML block list must not be tagged in
+  // the lint report yet tagless in its MOC.
+  const tags = parseTags(frontmatterOf(content))
 
   // Summary precedence — this is the per-page EXTRACTED value only. The index/MOC
   // emitter prefers a preserved curated one-liner over this (see resolveSummary), so a
@@ -100,28 +106,6 @@ export function parsePage(relativePath: string, content: string): PageInfo {
 
 // ─── Curated-summary preservation ─────────────────────────
 
-// One index entry: `- [[slug]] — summary` (Overview, category, and Sources lines all
-// share this shape). The slug may carry an optional `|Display` alias. The separator is
-// the em-dash with single surrounding spaces, exactly as buildIndex emits it; we split
-// on the FIRST such separator so a summary may itself contain " — ".
-const INDEX_ENTRY = /^- \[\[([^\]|]+)(?:\|[^\]]*)?\]\] — (.+)$/
-
-/**
- * Parse an existing index.md into a `slug -> summary` map. The one-liner in index.md is
- * human-owned content (often hand-curated and richer than a page's opening sentence), so
- * a rebuild harvests these to preserve them rather than re-flattening from page bodies.
- * First occurrence of a slug wins; non-entry lines (headings, separators, prose) are
- * ignored. Returns an empty map for empty/absent content (first-run safety).
- */
-export function parseIndexSummaries(indexContent: string): Map<string, string> {
-  const summaries = new Map<string, string>()
-  for (const line of indexContent.split("\n")) {
-    const m = line.match(INDEX_ENTRY)
-    if (m && !summaries.has(m[1])) summaries.set(m[1], m[2])
-  }
-  return summaries
-}
-
 /**
  * Pick the one-liner for a page: a non-empty preserved (curated) summary wins verbatim;
  * otherwise fall back to the freshly-extracted one (frontmatter `summary` or first-body
@@ -135,28 +119,6 @@ export function resolveSummary(
 ): string {
   const kept = preserved.get(slug)
   return kept && kept.trim() ? kept : fallback
-}
-
-/**
- * What index.md costs to read. Every operation reads it first, so its size is the KB's
- * fixed per-operation overhead — and that is driven by one-liner length, not line count.
- * `long` lists entries over `oneLinerMaxChars`, longest first. Pure: shared by map's
- * Stats block and lint's index-size check.
- */
-export function indexStats(
-  indexContent: string,
-  oneLinerMaxChars: number,
-): { bytes: number; lines: number; entries: number; long: Array<{ slug: string; chars: number }> } {
-  const entries = [...parseIndexSummaries(indexContent)].map(([slug, summary]) => ({
-    slug,
-    chars: summary.length,
-  }))
-  return {
-    bytes: Buffer.byteLength(indexContent, "utf8"),
-    lines: lineCount(indexContent),
-    entries: entries.length,
-    long: entries.filter((e) => e.chars > oneLinerMaxChars).sort((a, b) => b.chars - a.chars),
-  }
 }
 
 // ─── Index Builder ────────────────────────────────────────

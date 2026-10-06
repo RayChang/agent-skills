@@ -1,5 +1,5 @@
 import { readdir, stat, readFile, writeFile, mkdir } from "node:fs/promises"
-import { existsSync } from "node:fs"
+import { existsSync, createReadStream } from "node:fs"
 import { resolve, relative, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import { spawnSync } from "node:child_process"
@@ -186,15 +186,25 @@ export async function readRawTextSources(): Promise<
 }
 
 /**
- * SHA-256 of every raw source file, keyed by path relative to kb/raw/sources/. Hashes
+ * SHA-256 of the named raw source files (paths relative to kb/raw/sources/). Hashes
  * bytes, not decoded text, so it covers binary sources and matches `shasum -a 256` /
  * `sha256sum` — the value Ingest records in a summary's `sha256` field.
+ *
+ * Only the files asked for are read, and each is streamed: a KB whose summaries record
+ * no hash (every KB that predates the field) reads nothing, and a multi-GB PDF never
+ * sits in memory. A file that cannot be read maps to null — an unreadable or vanished
+ * source is a finding for the caller to report, never a reason to abort the whole lint.
  */
-export async function hashRawSources(): Promise<Map<string, string>> {
-  const hashes = new Map<string, string>()
-  for (const rel of await listRawSourceFiles()) {
-    const bytes = await readFile(resolve(config.kb.rawSources, rel))
-    hashes.set(rel, createHash("sha256").update(bytes).digest("hex"))
+export async function hashRawSources(relPaths: Iterable<string>): Promise<Map<string, string | null>> {
+  const hashes = new Map<string, string | null>()
+  for (const rel of new Set(relPaths)) {
+    try {
+      const hash = createHash("sha256")
+      for await (const chunk of createReadStream(resolve(config.kb.rawSources, rel))) hash.update(chunk)
+      hashes.set(rel, hash.digest("hex"))
+    } catch {
+      hashes.set(rel, null)
+    }
   }
   return hashes
 }
@@ -246,6 +256,88 @@ export async function appendLog(
     dev: resolveDevSlug(),
     entry: formatLogEntry(action, description, details),
   })
+}
+
+// ─── Frontmatter (shared by lint and map — one parser, so they cannot disagree) ───
+
+/** Frontmatter block of a page with line endings normalised to LF; "" when absent. */
+export function frontmatterOf(content: string): string {
+  return content.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1].replace(/\r/g, "") ?? ""
+}
+
+/**
+ * A YAML scalar as written: surrounding quotes removed, and for an unquoted value a
+ * trailing ` # comment` dropped. The schema's own examples annotate fields that way
+ * (`sha256: <hex>   # optional — …`), so a value copied from them must still compare equal.
+ */
+function yamlScalar(raw: string): string {
+  const v = raw.trim()
+  const quoted = v.match(/^(["'])(.*?)\1/)
+  return quoted ? quoted[2] : v.replace(/(^|\s+)#.*$/, "").trim()
+}
+
+/** Scalar frontmatter value; null when the key is absent or its value is empty. */
+export function fmValue(fm: string, key: string): string | null {
+  const m = fm.match(new RegExp(`^${key}:[ \\t]*(.*)$`, "m"))
+  return (m && yamlScalar(m[1])) || null
+}
+
+/** Tags from frontmatter — inline `[a, b]` or a YAML block list; trailing comments ignored. */
+export function parseTags(fm: string): string[] {
+  const inline = fm.match(/^tags:[ \t]*\[([^\]]*)\]/m)
+  if (inline) return inline[1].split(",").map(yamlScalar).filter(Boolean)
+  const block = fm.match(/^tags:[ \t]*(?:#.*)?\n((?:[ \t]+-[ \t]*.*(?:\n|$))+)/m)
+  if (!block) return []
+  return block[1]
+    .split("\n")
+    .map((l) => yamlScalar(l.replace(/^[ \t]+-[ \t]*/, "")))
+    .filter(Boolean)
+}
+
+// ─── index.md parsing (pure) ──────────────────────────────
+
+// One index entry: `- [[slug]] — summary` (Overview, category, and Sources lines all
+// share this shape). The slug may carry an optional `|Display` alias. The separator is
+// the em-dash with single surrounding spaces, exactly as map's buildIndex emits it; we
+// split on the FIRST such separator so a summary may itself contain " — ".
+const INDEX_ENTRY = /^- \[\[([^\]|]+)(?:\|[^\]]*)?\]\] — (.+)$/
+
+/**
+ * Parse an existing index.md into a `slug -> summary` map. The one-liner in index.md is
+ * human-owned content (often hand-curated and richer than a page's opening sentence), so
+ * a rebuild harvests these to preserve them rather than re-flattening from page bodies.
+ * First occurrence of a slug wins; non-entry lines (headings, separators, prose) are
+ * ignored. Returns an empty map for empty/absent content (first-run safety).
+ */
+export function parseIndexSummaries(indexContent: string): Map<string, string> {
+  const summaries = new Map<string, string>()
+  for (const line of indexContent.split("\n")) {
+    const m = line.match(INDEX_ENTRY)
+    if (m && !summaries.has(m[1])) summaries.set(m[1], m[2])
+  }
+  return summaries
+}
+
+/**
+ * What index.md costs to read. Every operation reads it first, so its size is the KB's
+ * fixed per-operation overhead — and that is driven by one-liner length, not line count.
+ * `long` lists entries over `oneLinerMaxChars`, longest first. Shared by map's Stats
+ * block and lint's index-size check.
+ */
+export function indexStats(
+  indexContent: string,
+  oneLinerMaxChars: number,
+): { bytes: number; lines: number; entries: number; long: Array<{ slug: string; chars: number }> } {
+  const entries = [...parseIndexSummaries(indexContent)].map(([slug, summary]) => ({
+    slug,
+    chars: summary.length,
+  }))
+  return {
+    bytes: Buffer.byteLength(indexContent, "utf8"),
+    lines: lineCount(indexContent),
+    entries: entries.length,
+    long: entries.filter((e) => e.chars > oneLinerMaxChars).sort((a, b) => b.chars - a.chars),
+  }
 }
 
 // ─── Formatting ───────────────────────────────────────────
