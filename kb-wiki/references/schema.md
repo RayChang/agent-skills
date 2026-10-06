@@ -20,7 +20,7 @@ kb/
 └── schema.md       # Project-specific KB conventions (copy from skill asset)
 ```
 
-Categories are suggestions — adapt to the project's domain.
+Categories are suggestions — adapt to the project's domain. Wiki files are stored with LF line endings: the scripts read CRLF, and write LF whenever they rewrite a file.
 
 ## Page Format
 
@@ -69,6 +69,7 @@ Sessions are stored in Redis.
 - **Outdated** — written when Verify or a newer source corrects a claim. Needs the `(YYYY-MM-DD)` date and what changed. It is a breadcrumb, not an archive: one line, deleted on a later touch once the old value no longer matters.
 - **Disputed** — written when two pages (or a page and a source) disagree and a human has not ruled. Needs what it conflicts with. Put the block on **both** pages and set `contested: true` and `contradictions` in their frontmatter; remove all three once the human decides.
 - Lint `status-block` flags an Outdated block with no date and either block with no explanation.
+- A page that only *shows* the format must put the example in a fenced code block — lint skips fences and checks every other `>` line, indented or not.
 
 ## Summary Page Format (wiki/summaries/)
 
@@ -137,7 +138,7 @@ Tags are free-form by default. A project that wants a controlled vocabulary list
 - `i18n` — translations, locale routing
 ```
 
-The list is human-owned (meta tier). Once it has at least one bullet, Lint `tag-audit` warns on any page tag outside it; an empty or absent section enforces nothing. Either way, spelling variants (`hostDirectives` / `hostdirectives` / `host-directives`) are reported as near-duplicates, and a tag used in both singular and plural (`gate` / `gates`) as a *possible* pair — the script cannot know they mean the same thing.
+The list is human-owned (meta tier). Once it has at least one bullet, Lint `tag-audit` warns on any page tag outside it; an empty or absent section enforces nothing. Either way, tags that differ only by case or separators (`hostDirectives` / `hostdirectives` / `host-directives`) are reported as near-duplicates.
 
 ## Lint Categories (deterministic hygiene checks)
 
@@ -149,8 +150,8 @@ Run by `lint.ts` with no LLM and no tokens. They report only — fixes follow th
 | `index-size` | warning | `index.md` exceeds 50 KB — one finding naming the longest one-liners | `KB_INDEX_MAX_BYTES` |
 | `index-size` | info | the index is under budget but some one-liners exceed 200 chars | `KB_ONE_LINER_MAX_CHARS` |
 | `tag-audit` | warning | a page uses a tag outside the project's Tag Vocabulary (only if one is listed) | — |
-| `tag-audit` | info | two tags differ only by case or separators (near-duplicate), or one is the other plus a plural `s` (possible pair) | — |
-| `raw-drift` | warning | a summary's recorded `sha256` no longer matches its raw file, or the file is gone or unreadable | — |
+| `tag-audit` | info | two tags differ only by case or separators | — |
+| `raw-drift` | warning | a summary's recorded `sha256` no longer matches its raw file, the file is gone or unreadable, or the recorded value is not a 64-character hex digest | — |
 | `status-block` | warning | an Outdated block has no date, or either Status block has no explanation | — |
 | `seedling-age` | info | `status: seedling` and `created` is more than 90 days ago | `KB_SEEDLING_DAYS` |
 
