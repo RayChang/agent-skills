@@ -55,8 +55,14 @@ export function readGitUserName(): string | null {
 
 // ─── Portable file helpers (Node + Bun) ───────────────────
 
+/**
+ * Read text with line endings normalised to LF. Every parser here works line by line
+ * and a regex `.` never matches `\r`, so a file an editor saved as CRLF would otherwise
+ * parse as empty — for index.md that means a Map rebuild discarding every curated
+ * one-liner.
+ */
 export async function readText(path: string): Promise<string> {
-  return readFile(path, "utf8")
+  return (await readFile(path, "utf8")).replace(/\r\n/g, "\n")
 }
 
 /** Write text, creating parent directories (matches the old Bun.write behaviour). */
@@ -192,22 +198,26 @@ export async function readRawTextSources(): Promise<
  *
  * Only the files asked for are read, and each is streamed: a KB whose summaries record
  * no hash (every KB that predates the field) reads nothing, and a multi-GB PDF never
- * sits in memory. A file that cannot be read maps to null — an unreadable or vanished
- * source is a finding for the caller to report, never a reason to abort the whole lint.
+ * sits in memory. A file that cannot be read maps to its error code (EACCES, ENOENT, …)
+ * — an unreadable or vanished source is a finding for the caller to report, never a
+ * reason to abort the whole lint.
  */
-export async function hashRawSources(relPaths: Iterable<string>): Promise<Map<string, string | null>> {
-  const hashes = new Map<string, string | null>()
+export async function hashRawSources(relPaths: Iterable<string>): Promise<Map<string, RawHash>> {
+  const hashes = new Map<string, RawHash>()
   for (const rel of new Set(relPaths)) {
     try {
       const hash = createHash("sha256")
       for await (const chunk of createReadStream(resolve(config.kb.rawSources, rel))) hash.update(chunk)
-      hashes.set(rel, hash.digest("hex"))
-    } catch {
-      hashes.set(rel, null)
+      hashes.set(rel, { sha256: hash.digest("hex") })
+    } catch (err) {
+      hashes.set(rel, { error: (err as { code?: string }).code ?? "unreadable" })
     }
   }
   return hashes
 }
+
+/** Current state of one raw file: its hash, or the error code that stopped it being read. */
+export type RawHash = { sha256: string } | { error: string }
 
 /** Line count as `wc -l` reports it for newline-terminated text (a final newline adds no line). */
 export function lineCount(text: string): number {
@@ -260,20 +270,41 @@ export async function appendLog(
 
 // ─── Frontmatter (shared by lint and map — one parser, so they cannot disagree) ───
 
+const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---/
+
 /** Frontmatter block of a page with line endings normalised to LF; "" when absent. */
 export function frontmatterOf(content: string): string {
-  return content.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1].replace(/\r/g, "") ?? ""
+  return content.match(FRONTMATTER)?.[1].replace(/\r/g, "") ?? ""
+}
+
+/** The page text after its frontmatter block — the whole text when it has none. */
+export function bodyOf(content: string): string {
+  const m = content.match(FRONTMATTER)
+  return m ? content.slice(m[0].length) : content
 }
 
 /**
- * A YAML scalar as written: surrounding quotes removed, and for an unquoted value a
- * trailing ` # comment` dropped. The schema's own examples annotate fields that way
+ * A YAML scalar as written: a trailing ` # comment` dropped, and a quoted value
+ * unquoted. The schema's own examples annotate fields with comments
  * (`sha256: <hex>   # optional — …`), so a value copied from them must still compare equal.
+ *
+ * A value counts as quoted only when its closing quote ends it — escapes honoured
+ * (`\"` inside double quotes, `''` inside single quotes). Anything else is kept as
+ * written, quotes included: a real page titled `"Merged" does not equal "landed" — …`
+ * is not valid YAML, and reading it as the quoted scalar `Merged` would throw away the
+ * rest of the title.
+ *
+ * For the same reason an unquoted `#` starts a comment only when whitespace follows it
+ * (`# note`). Strict YAML would also cut `Fix for bug #42` down to `Fix for bug`; titles
+ * and summaries are prose, where `#42` is a reference, so it is kept.
  */
 function yamlScalar(raw: string): string {
   const v = raw.trim()
-  const quoted = v.match(/^(["'])(.*?)\1/)
-  return quoted ? quoted[2] : v.replace(/(^|\s+)#.*$/, "").trim()
+  const double = v.match(/^"((?:[^"\\]|\\.)*)"\s*(?:#.*)?$/)
+  if (double) return double[1].replace(/\\(["\\])/g, "$1")
+  const single = v.match(/^'((?:[^']|'')*)'\s*(?:#.*)?$/)
+  if (single) return single[1].replace(/''/g, "'")
+  return v.replace(/(^|\s+)#(\s.*)?$/, "").trim()
 }
 
 /** Scalar frontmatter value; null when the key is absent or its value is empty. */
@@ -286,11 +317,13 @@ export function fmValue(fm: string, key: string): string | null {
 export function parseTags(fm: string): string[] {
   const inline = fm.match(/^tags:[ \t]*\[([^\]]*)\]/m)
   if (inline) return inline[1].split(",").map(yamlScalar).filter(Boolean)
-  const block = fm.match(/^tags:[ \t]*(?:#.*)?\n((?:[ \t]+-[ \t]*.*(?:\n|$))+)/m)
+  // Items may be indented or not — `tags:\n- a\n- b` is valid YAML and what many
+  // editors emit. The run ends at the first line that is not a `- item`.
+  const block = fm.match(/^tags:[ \t]*(?:#.*)?\n((?:[ \t]*-(?:[ \t].*)?(?:\n|$))+)/m)
   if (!block) return []
   return block[1]
     .split("\n")
-    .map((l) => yamlScalar(l.replace(/^[ \t]+-[ \t]*/, "")))
+    .map((l) => yamlScalar(l.replace(/^[ \t]*-[ \t]*/, "")))
     .filter(Boolean)
 }
 
@@ -311,7 +344,7 @@ const INDEX_ENTRY = /^- \[\[([^\]|]+)(?:\|[^\]]*)?\]\] — (.+)$/
  */
 export function parseIndexSummaries(indexContent: string): Map<string, string> {
   const summaries = new Map<string, string>()
-  for (const line of indexContent.split("\n")) {
+  for (const line of indexContent.split(/\r?\n/)) {
     const m = line.match(INDEX_ENTRY)
     if (m && !summaries.has(m[1])) summaries.set(m[1], m[2])
   }

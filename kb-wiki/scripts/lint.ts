@@ -32,6 +32,7 @@ import {
   fmValue,
   parseTags,
   indexStats,
+  type RawHash,
 } from "./lib/kb.ts"
 
 // ─── Types ────────────────────────────────────────────────
@@ -509,6 +510,8 @@ export function checkTags(pages: Page[], vocabulary: Set<string>): LintIssue[] {
   return issues
 }
 
+export type RecordedSource = { file: string; source: string; recorded: string; candidates: string[] }
+
 /**
  * Summaries that recorded a sha256, each with the raw files its `source:` could mean:
  * the exact path if it exists, else every file with that basename (a bare filename is
@@ -516,11 +519,15 @@ export function checkTags(pages: Page[], vocabulary: Set<string>): LintIssue[] {
  * summary that predates the field), a URL source (no local file), and a list of
  * sources (one hash cannot be attributed to several files).
  */
-function recordedSources(
-  pages: Page[],
-  rawFiles: string[],
-): Array<{ file: string; source: string; recorded: string; candidates: string[] }> {
-  const out: Array<{ file: string; source: string; recorded: string; candidates: string[] }> = []
+export function recordedSources(pages: Page[], rawFiles: string[]): RecordedSource[] {
+  const known = new Set(rawFiles)
+  const byBasename = new Map<string, string[]>()
+  for (const path of rawFiles) {
+    const base = path.split("/").pop()!
+    byBasename.set(base, [...(byBasename.get(base) ?? []), path])
+  }
+
+  const out: RecordedSource[] = []
   for (const page of pages) {
     if (!page.relativePath.startsWith("summaries/")) continue
     const fm = frontmatterOf(page.content)
@@ -529,42 +536,34 @@ function recordedSources(
     if (!recorded || !source || /^https?:\/\//i.test(source) || source.startsWith("[")) continue
 
     const rel = source.replace(/^\.\//, "").replace(/^kb\//, "").replace(/^raw\/sources\//, "")
-    const base = rel.split("/").pop()
-    const candidates = rawFiles.includes(rel)
-      ? [rel]
-      : rawFiles.filter((p) => p.split("/").pop() === base)
+    const candidates = known.has(rel) ? [rel] : (byBasename.get(rel.split("/").pop()!) ?? [])
     out.push({ file: page.relativePath, source, recorded: recorded.toLowerCase(), candidates })
   }
   return out
 }
 
-/** The raw files lint must hash for the raw-drift check — nothing else is read. */
-export function sourcesNeedingHash(pages: Page[], rawFiles: string[]): string[] {
-  return [...new Set(recordedSources(pages, rawFiles).flatMap((r) => r.candidates))]
-}
-
 /**
  * "Never modify or delete anything under kb/raw/" was a prohibition with no detector.
  * A summary that recorded its source's sha256 at ingest makes a later edit, move, or
- * deletion visible. `rawHashes` maps a raw path to its current hash, or null when the
- * file could not be read.
+ * deletion visible. `recorded` comes from recordedSources(); `rawHashes` holds the
+ * current state of each candidate file (its hash, or why it could not be read).
  */
-export function checkRawDrift(
-  pages: Page[],
-  rawFiles: string[],
-  rawHashes: Map<string, string | null>,
-): LintIssue[] {
+export function checkRawDrift(recorded: RecordedSource[], rawHashes: Map<string, RawHash>): LintIssue[] {
   const issues: LintIssue[] = []
   const warn = (file: string, message: string) =>
     issues.push({ severity: "warning", category: "raw-drift", message, file })
 
-  for (const { file, source, recorded, candidates } of recordedSources(pages, rawFiles)) {
+  for (const { file, source, recorded: sha256, candidates } of recorded) {
+    const states = candidates.map((path) => ({ path, state: rawHashes.get(path) }))
+    const unread = states.find((s) => !s.state || "error" in s.state)
+
     if (candidates.length === 0) {
       warn(file, `Summary records a sha256 for "${source}" but that file is no longer in raw/sources/ — raw files must not be moved or deleted`)
-    } else if (candidates.some((c) => rawHashes.get(c) === recorded)) {
+    } else if (states.some((s) => s.state && "sha256" in s.state && s.state.sha256 === sha256)) {
       continue // some file by that name is byte-identical to what was ingested
-    } else if (candidates.some((c) => rawHashes.get(c) == null)) {
-      warn(file, `Cannot read raw/sources/${candidates.find((c) => rawHashes.get(c) == null)} to verify its recorded sha256 — check the file's permissions`)
+    } else if (unread) {
+      const why = unread.state && "error" in unread.state ? unread.state.error : "not hashed"
+      warn(file, `Cannot read raw/sources/${unread.path} (${why}) to verify its recorded sha256`)
     } else if (candidates.length === 1) {
       warn(file, `Raw source changed since ingest (sha256 mismatch: raw/sources/${candidates[0]}) — re-review this summary and the pages it touched`)
     } else {
@@ -579,6 +578,25 @@ export function checkRawDrift(
 // claim" then means a blockquote indented inside the list item.
 const STATUS_BLOCK = /^\s*>\s*\*\*Status:\s*(Outdated|Disputed)\*\*(.*)$/i
 
+const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s/
+const indentOf = (line: string) => line.length - line.trimStart().length
+
+/**
+ * A `>` line indented four or more spaces is a blockquote only inside a list item;
+ * anywhere else Markdown reads it as an indented code block — a page showing the
+ * format, not using it. It belongs to a list item when the nearest shallower line
+ * above it is one.
+ */
+function isIndentedCode(lines: string[], i: number): boolean {
+  const indent = indentOf(lines[i])
+  if (indent < 4) return false
+  for (let j = i - 1; j >= 0; j--) {
+    if (lines[j].trim() === "" || indentOf(lines[j]) >= indent) continue
+    return !LIST_ITEM.test(lines[j])
+  }
+  return true
+}
+
 /**
  * `> **Status: Outdated** (YYYY-MM-DD) — why` and `> **Status: Disputed** — what it
  * conflicts with` mark a claim in place instead of silently rewriting it. A block with
@@ -589,14 +607,14 @@ export function checkStatusBlocks(pages: Page[]): LintIssue[] {
 
   for (const page of pages) {
     if (isMetaFile(page.relativePath)) continue
-    const lines = page.content.split("\n")
+    const lines = page.content.split(/\r?\n/)
     let inFence = false // a page documenting the format in a code block is not using it
 
     for (let i = 0; i < lines.length; i++) {
       if (/^\s*(```|~~~)/.test(lines[i])) inFence = !inFence
       if (inFence) continue
       const m = lines[i].match(STATUS_BLOCK)
-      if (!m) continue
+      if (!m || isIndentedCode(lines, i)) continue
 
       const kind = m[1].toLowerCase() === "outdated" ? "Outdated" : "Disputed"
       const date = m[2].match(/^\s*\(\d{4}-\d{2}-\d{2}\)/)
@@ -843,7 +861,8 @@ async function main() {
   const rawFiles = await listRawSourceFiles()
   const rawTextSources = await readRawTextSources()
   // Lazy: only the raw files some summary recorded a sha256 for (usually none).
-  const rawHashes = await hashRawSources(sourcesNeedingHash(pages, rawFiles))
+  const recorded = recordedSources(pages, rawFiles)
+  const rawHashes = await hashRawSources(recorded.flatMap((r) => r.candidates))
   const schema = existsSync(config.kb.schema) ? await readText(config.kb.schema) : null
   console.log(`Scanning ${pages.length} wiki pages, ${rawFiles.length} raw sources...\n`)
 
@@ -857,7 +876,7 @@ async function main() {
     ...checkOversizedPages(pages),
     ...checkIndexSize(pages),
     ...checkTags(pages, parseTagVocabulary(schema)),
-    ...checkRawDrift(pages, rawFiles, rawHashes),
+    ...checkRawDrift(recorded, rawHashes),
     ...checkStatusBlocks(pages),
     ...checkSeedlingAge(pages),
   ]

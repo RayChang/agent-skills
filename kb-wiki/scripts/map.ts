@@ -25,6 +25,8 @@ import {
   isDirectRun,
   lineCount,
   frontmatterOf,
+  bodyOf,
+  fmValue,
   parseTags,
   parseIndexSummaries,
   indexStats,
@@ -57,16 +59,12 @@ export function parsePage(relativePath: string, content: string): PageInfo {
   const parts = relativePath.split("/")
   const category = parts.length > 1 ? parts[0] : "root"
 
-  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/)
-  const fm = fmMatch?.[1] ?? ""
-
-  const titleMatch =
-    fm.match(/title:\s*"?(.+?)"?\s*$/m) ?? content.match(/^# (.+)$/m)
-  const title = titleMatch?.[1] ?? slug
-
-  // Shared with lint: a page whose tags are a YAML block list must not be tagged in
-  // the lint report yet tagless in its MOC.
-  const tags = parseTags(frontmatterOf(content))
+  // Every field goes through the one frontmatter parser lint also uses (lib/kb.ts):
+  // CRLF pages, `# comments`, quoted values, and block-list tags must read the same in
+  // both scripts, or the index/MOC and the lint report describe different pages.
+  const fm = frontmatterOf(content)
+  const title = fmValue(fm, "title") ?? content.match(/^# (.+)$/m)?.[1].trim() ?? slug
+  const tags = parseTags(fm)
 
   // Summary precedence — this is the per-page EXTRACTED value only. The index/MOC
   // emitter prefers a preserved curated one-liner over this (see resolveSummary), so a
@@ -76,13 +74,9 @@ export function parsePage(relativePath: string, content: string): PageInfo {
   // 2. fallback: first meaningful body paragraph — covers legacy pages without the
   //    field and the summaries/ ledger pages (whose frontmatter carries no `summary`).
   // Body is scanned after the frontmatter block so other frontmatter keys never leak in.
-  let summary = ""
-  const summaryMatch = fm.match(/^summary:\s*"?(.+?)"?\s*$/m)
-  if (summaryMatch) {
-    summary = summaryMatch[1].trim()
-  } else {
-    const body = fmMatch ? content.slice(fmMatch[0].length) : content
-    for (const line of body.split("\n")) {
+  let summary = fmValue(fm, "summary") ?? ""
+  if (!summary) {
+    for (const line of bodyOf(content).split("\n")) {
       const trimmed = line.trim()
       if (
         trimmed &&

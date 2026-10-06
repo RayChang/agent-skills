@@ -227,3 +227,38 @@ test("frontmatterOf: a CRLF page parses the same as an LF one", () => {
   expect(parseTags(fm)).toEqual(["a", "b"])
   expect(frontmatterOf("# No frontmatter here\n")).toBe("")
 })
+
+// ─── CRLF at the read boundary ────────────────────────────
+
+import { readText, parseIndexSummaries, bodyOf } from "./kb"
+import { mkdtemp as mkdtempCrlf, writeFile as writeFileCrlf, rm as rmCrlf } from "node:fs/promises"
+import { tmpdir as tmpdirCrlf } from "node:os"
+import { join as joinCrlf } from "node:path"
+
+test("readText: CRLF is normalised to LF on read", async () => {
+  const d = await mkdtempCrlf(joinCrlf(tmpdirCrlf(), "kbcrlf-"))
+  try {
+    await writeFileCrlf(joinCrlf(d, "index.md"), "- [[concepts/a]] — curated\r\n- [[concepts/b]] — also curated\r\n")
+    const text = await readText(joinCrlf(d, "index.md"))
+    expect(text).not.toContain("\r")
+    expect(parseIndexSummaries(text).size).toBe(2)
+  } finally {
+    await rmCrlf(d, { recursive: true, force: true })
+  }
+})
+
+test("parseIndexSummaries: a CRLF index keeps every curated one-liner", () => {
+  // Regression: a regex `.` never matches \r, so each CRLF entry failed to match, the
+  // map came back empty, and a rebuild would have replaced every hand-written one-liner.
+  const summaries = parseIndexSummaries("# W\r\n\r\n- [[concepts/a]] — curated by hand\r\n- [[concepts/b|B]] — second\r\n")
+  expect([...summaries]).toEqual([
+    ["concepts/a", "curated by hand"],
+    ["concepts/b", "second"],
+  ])
+})
+
+test("bodyOf: strips the frontmatter block for LF and CRLF pages, and passes through a page without one", () => {
+  expect(bodyOf("---\ntitle: T\n---\n\nBody")).toBe("\n\nBody")
+  expect(bodyOf("---\r\ntitle: T\r\n---\r\n\r\nBody")).toBe("\r\n\r\nBody")
+  expect(bodyOf("No frontmatter")).toBe("No frontmatter")
+})

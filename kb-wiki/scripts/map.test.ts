@@ -240,3 +240,30 @@ test("parsePage: tags written as a YAML block list are read (same parser as lint
   )
   expect(page.tags).toEqual(["alpha", "beta"])
 })
+
+test("parsePage: a CRLF page yields its real title and summary, never a frontmatter line", () => {
+  // Regression: map's own LF-only matcher missed the frontmatter of a CRLF page, so the
+  // whole file was scanned as body and the literal `summary: …` line became the one-liner.
+  const page = parsePage(
+    "concepts/widget.md",
+    "---\r\ntitle: Widget\r\nsummary: What a widget is.\r\ncategory: concepts\r\ntags: [a]\r\n---\r\n\r\n# Widget\r\n\r\nBody paragraph long enough to be picked up by the fallback.\r\n",
+  )
+  expect(page.title).toBe("Widget")
+  expect(page.summary).toBe("What a widget is.")
+  expect(page.tags).toEqual(["a"])
+})
+
+test("parsePage: a trailing comment is not part of the title or summary (same reading as lint)", () => {
+  const page = parsePage(
+    "concepts/widget.md",
+    `---\ntitle: Widget  # working title\nsummary: "What a widget is."  # one sentence\ncategory: concepts\ntags: [a]\n---\n\nBody.`,
+  )
+  expect(page.title).toBe("Widget")
+  expect(page.summary).toBe("What a widget is.")
+})
+
+test("parsePage: without frontmatter, the body fallback still skips headings", () => {
+  const page = parsePage("concepts/plain.md", "# Plain Page\n\nThis first body paragraph is long enough to be picked.")
+  expect(page.title).toBe("Plain Page")
+  expect(page.summary).toBe("This first body paragraph is long enough to be picked.")
+})

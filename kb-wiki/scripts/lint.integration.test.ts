@@ -195,9 +195,31 @@ test("an unreadable raw file never aborts lint: ignored when no hash is recorded
     const withHash = await run(lintPath, d)
     expect(withHash.stderr).not.toContain("Fatal")
     expect(withHash.exitCode).toBe(0)
-    expect(withHash.stdout).toContain("Cannot read raw/sources/locked.pdf")
+    expect(withHash.stdout).toContain("Cannot read raw/sources/locked.pdf (EACCES)")
   } finally {
     await chmod(locked, 0o600).catch(() => {})
+    await rm(d, { recursive: true, force: true })
+  }
+})
+
+// ─── CRLF index: a rebuild must not discard curated one-liners ───────────────
+
+test("map preserves hand-written one-liners when index.md was saved with CRLF line endings", async () => {
+  // The one-liners in index.md are the KB's human-owned asset. A Windows editor
+  // converting the file to CRLF used to make every entry unparseable, so the next
+  // rebuild treated each page as new and overwrote them all.
+  const d = await mkdtemp(join(tmpdir(), "kbmap-"))
+  try {
+    await seedMinimalKb(d)
+    await writeFile(
+      join(d, "kb/wiki/index.md"),
+      "# Demo Wiki — Index\r\n\r\n## Concepts (1)\r\n- [[concepts/x]] — hand-written line that must survive\r\n",
+    )
+    const { exitCode } = await run(mapPath, d)
+    expect(exitCode).toBe(0)
+    const rebuilt = await Bun.file(join(d, "kb/wiki/index.md")).text()
+    expect(rebuilt).toContain("- [[concepts/x]] — hand-written line that must survive")
+  } finally {
     await rm(d, { recursive: true, force: true })
   }
 })

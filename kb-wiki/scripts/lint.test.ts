@@ -139,7 +139,7 @@ import {
   parseTagVocabulary,
   checkTags,
   checkRawDrift,
-  sourcesNeedingHash,
+  recordedSources,
   checkStatusBlocks,
   checkSeedlingAge,
 } from "./lint"
@@ -222,6 +222,39 @@ test("parseTags / fmValue: a trailing YAML comment is not part of the value", ()
   expect(fmValue(`title: C# basics`, "title")).toBe("C# basics")
   expect(fmValue(`title: "Issue #42 # not a comment"`, "title")).toBe("Issue #42 # not a comment")
   expect(fmValue(`source:`, "source")).toBeNull()
+})
+
+test("fmValue: `#42` in prose is a reference, not a comment", () => {
+  // Titles and summaries reach index.md and the MOCs through this parser. Cutting
+  // `Fix for bug #42` at the `#` would silently shorten a heading the author wrote.
+  expect(fmValue(`title: Fix for bug #42`, "title")).toBe("Fix for bug #42")
+  expect(fmValue(`summary: See PR #45 and #46  # reviewed`, "summary")).toBe("See PR #45 and #46")
+  expect(fmValue(`note:   # nothing here`, "note")).toBeNull()
+})
+
+test("fmValue: a quoted value is read to its real closing quote", () => {
+  // Regression: matching up to the FIRST repeated quote truncated escaped values.
+  expect(fmValue(String.raw`title: "He said \"hi\" ok"`, "title")).toBe(`He said "hi" ok`)
+  expect(fmValue(`title: 'it''s fine'  # note`, "title")).toBe("it's fine")
+  expect(fmValue(String.raw`path: "C:\\tmp"`, "path")).toBe(String.raw`C:\tmp`)
+})
+
+test("fmValue: a value that merely starts with a quote is kept whole", () => {
+  // Regression, found on a real KB: this title is not valid YAML (the scalar starts
+  // with a quote but continues past the closing one). Reading it as the quoted scalar
+  // "Merged" turned the page's MOC heading into the single word `Merged`.
+  const title = `"Merged" does not equal "landed" — stacked MR stranding`
+  expect(fmValue(`title: ${title}`, "title")).toBe(title)
+  expect(fmValue(`title: ${title}  # note`, "title")).toBe(title)
+  expect(fmValue(`title: "unterminated`, "title")).toBe(`"unterminated`)
+  expect(fmValue(`tagline: 'tis the season`, "tagline")).toBe(`'tis the season`)
+})
+
+test("parseTags: a block list with the dash at column 0 is read", () => {
+  // Regression: `tags:\n- a\n- b` is valid YAML and what many editors emit; requiring
+  // indentation read it as no tags, silently dropping the page from MOCs and the audit.
+  expect(parseTags(`title: T\ntags:\n- alpha\n- "beta"  # note\nstatus: seedling`)).toEqual(["alpha", "beta"])
+  expect(parseTags(`tags:\n- alpha\nsources:\n- not-a-tag.md`)).toEqual(["alpha"])
 })
 
 test("the schema's own summary example parses cleanly (its fields carry # comments)", async () => {
@@ -310,8 +343,12 @@ test("checkTags: a trailing s is not assumed to be a plural", () => {
 
 const summary = (fields: string) => page("summaries/report.md", `---\n${fields}\n---\n\n- takeaway`)
 
-const drift = (summaryFields: string, hashes: Record<string, string | null>) =>
-  checkRawDrift([summary(summaryFields)], Object.keys(hashes), new Map(Object.entries(hashes)))
+// `hashes` maps a raw path to its current sha256, or to { error } when unreadable.
+const drift = (summaryFields: string, hashes: Record<string, string | { error: string }>) =>
+  checkRawDrift(
+    recordedSources([summary(summaryFields)], Object.keys(hashes)),
+    new Map(Object.entries(hashes).map(([path, h]) => [path, typeof h === "string" ? { sha256: h } : h])),
+  )
 
 test("checkRawDrift: matching hash is silent; a changed source is a warning", () => {
   expect(drift("source: report.md\nsha256: AAA111", { "report.md": "aaa111" })).toEqual([])
@@ -338,9 +375,7 @@ test("checkRawDrift: summaries without a hash, URL sources, and source lists are
   expect(drift("source: https://example.com/a\nsha256: bbb222", hashes)).toEqual([])
   // One hash cannot be attributed to several files — not "the file was deleted".
   expect(drift("source: [report.md, other.md]\nsha256: bbb222", hashes)).toEqual([])
-  expect(
-    checkRawDrift([page("concepts/x.md", fm("sha256: bbb222"))], ["report.md"], new Map([["report.md", "aaa111"]])),
-  ).toEqual([])
+  expect(recordedSources([page("concepts/x.md", fm("sha256: bbb222"))], ["report.md"])).toEqual([])
 })
 
 test("checkRawDrift: a nested source is matched by its unique basename", () => {
@@ -360,22 +395,24 @@ test("checkRawDrift: an ambiguous basename is never reported as a deleted file",
   expect(none[0].message).not.toContain("no longer in raw/sources/")
 })
 
-test("checkRawDrift: an unreadable source is its own finding, not a mismatch", () => {
-  const issues = drift("source: report.pdf\nsha256: aaa111", { "report.pdf": null })
-  expect(issues).toHaveLength(1)
-  expect(issues[0].message).toContain("Cannot read raw/sources/report.pdf")
+test("checkRawDrift: an unreadable source is its own finding and names the real error", () => {
+  // The cause is reported, not guessed: a file that vanished mid-run (ENOENT) or a
+  // broken symlink is not a permissions problem.
+  const denied = drift("source: report.pdf\nsha256: aaa111", { "report.pdf": { error: "EACCES" } })
+  expect(denied).toHaveLength(1)
+  expect(denied[0].message).toBe("Cannot read raw/sources/report.pdf (EACCES) to verify its recorded sha256")
+  const gone = drift("source: report.pdf\nsha256: aaa111", { "report.pdf": { error: "ENOENT" } })
+  expect(gone[0].message).toContain("(ENOENT)")
 })
 
-test("sourcesNeedingHash: only files a summary recorded a hash for — none in a KB that predates the field", () => {
+test("recordedSources: only files a summary recorded a hash for — none in a KB that predates the field", () => {
   // Regression: lint hashed every raw file on every run, so a 2 GB raw/ directory was
   // read in full to produce zero findings, and one unreadable file aborted the run.
   const raw = ["report.md", "2025/notes.md", "2026/notes.md", "huge.pdf"]
-  expect(sourcesNeedingHash([summary("source: report.md")], raw)).toEqual([])
-  expect(sourcesNeedingHash([summary("source: report.md\nsha256: aaa111")], raw)).toEqual(["report.md"])
-  expect(sourcesNeedingHash([summary("source: notes.md\nsha256: aaa111")], raw)).toEqual([
-    "2025/notes.md",
-    "2026/notes.md",
-  ])
+  const candidates = (fields: string) => recordedSources([summary(fields)], raw).flatMap((r) => r.candidates)
+  expect(candidates("source: report.md")).toEqual([])
+  expect(candidates("source: report.md\nsha256: aaa111")).toEqual(["report.md"])
+  expect(candidates("source: notes.md\nsha256: aaa111")).toEqual(["2025/notes.md", "2026/notes.md"])
 })
 
 test("checkStatusBlocks: well-formed Outdated and Disputed blocks are silent", () => {
@@ -421,6 +458,25 @@ test("checkStatusBlocks: a block indented under a list item is checked too", () 
     "- The limit is 7.",
     "  > **Status: Outdated** (2026-10-06) — was 5; now 7",
   ].join("\n")
+  expect(checkStatusBlocks([page("concepts/a.md", body)]).map((i) => i.message)).toEqual([
+    "Status: Outdated block has no (YYYY-MM-DD) date",
+    "Status: Outdated block has no explanation — say what replaced the claim or what it conflicts with",
+  ])
+})
+
+test("checkStatusBlocks: an indented code block showing the format is not a Status block", () => {
+  // Regression: allowing leading whitespace made a 4-space code block (the un-fenced
+  // Markdown way to show an example) count as a real, malformed Status block.
+  const example = ["Write it like this:", "", "    > **Status: Outdated**", ""].join("\n")
+  expect(checkStatusBlocks([page("concepts/a.md", example)])).toEqual([])
+
+  // The same four spaces under a nested list item are a real blockquote.
+  const nested = ["- Sessions", "  - live in Redis.", "    > **Status: Disputed**"].join("\n")
+  expect(checkStatusBlocks([page("concepts/b.md", nested)])).toHaveLength(1)
+})
+
+test("checkStatusBlocks: a CRLF page is checked like an LF one", () => {
+  const body = "The limit is 5.\r\n> **Status: Outdated**\r\n\r\n> **Status: Disputed** — conflicts with [[concepts/x]]\r\n"
   expect(checkStatusBlocks([page("concepts/a.md", body)]).map((i) => i.message)).toEqual([
     "Status: Outdated block has no (YYYY-MM-DD) date",
     "Status: Outdated block has no explanation — say what replaced the claim or what it conflicts with",
