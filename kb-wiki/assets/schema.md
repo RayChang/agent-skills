@@ -66,7 +66,8 @@ status: seedling | developing | mature
 sources: [filename in raw/sources, or URL]
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
-contested: true   # optional — only while a Status: Disputed block is open on this page
+contested: true                         # optional — only while a Status: Disputed block is open on this page
+contradictions: ["[[category/page]]"]   # optional — with contested: the page(s) it conflicts with
 ---
 
 # Page Title
@@ -87,7 +88,7 @@ distinct from the page's own synthesis (boundary marker; Trust & Security rule 1
 **Status blocks** mark a claim in place, directly under it, instead of silently rewriting it:
 
 - `> **Status: Outdated** (YYYY-MM-DD) — was X; now Y` — a corrected claim; one line, removed once the old value no longer matters
-- `> **Status: Disputed** — conflicts with [[category/page]]: X vs Y` — an unresolved contradiction; put it on both pages with `contested: true` until a human rules
+- `> **Status: Disputed** — conflicts with [[category/page]]: X vs Y` — an unresolved contradiction; put it on both pages, with `contested: true` and `contradictions` in their frontmatter, until a human rules
 
 ## Wiki Link Convention
 
