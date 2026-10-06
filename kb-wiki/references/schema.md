@@ -76,7 +76,7 @@ One per ingested source, written during Ingest. Brief by design — takeaways an
 
 ```markdown
 ---
-source: filename in raw/sources, or URL
+source: path under raw/sources (the full path when two folders share a filename), or URL
 origin: external | self        # optional — third-party material vs own design notes/decisions
 sha256: <hex digest>           # optional — `shasum -a 256` (or `sha256sum`) of the raw file at ingest; Lint `raw-drift` re-checks it
 source_url: https://…          # optional — where the raw file came from; with sha256, how Ingest spots a re-dropped source
