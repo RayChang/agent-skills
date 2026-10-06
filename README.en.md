@@ -92,7 +92,7 @@ Based on [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/4
 | `init` | Initialize the KB, set up directory structure and schema |
 | `ingest` | Process a new source: update wiki pages + write a per-source summary (`summaries/`, the ingest ledger) |
 | `query` | Answer a question from the wiki (facts cited, inference labeled); file substantial answers back |
-| `lint` | Health check: broken links, orphan pages, contradictions, un-ingested sources, **prompt-injection marker scan** (raw + wiki, flagged for human review); reports auto-pruned to the newest 3 |
+| `lint` | Health check: broken links, orphan pages, contradictions, un-ingested sources, **prompt-injection marker scan** (raw + wiki, flagged for human review); plus zero-token hygiene checks: oversized pages, index size, near-duplicate tags, raw sources changed since ingest (`sha256`), Status blocks missing a date or explanation, long-lived seedlings; reports auto-pruned to the newest 3 |
 | `map` | Rebuild index, MOCs, and cross-links |
 | `verify` | Drift audit: check wiki pages against the actual codebase |
 | `capture` | Extract design decisions and lessons after a milestone |
