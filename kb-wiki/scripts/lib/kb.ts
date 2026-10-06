@@ -284,19 +284,15 @@ export function bodyOf(content: string): string {
 }
 
 /**
- * A YAML scalar as written: a trailing ` # comment` dropped, and a quoted value
- * unquoted. The schema's own examples annotate fields with comments
- * (`sha256: <hex>   # optional — …`), so a value copied from them must still compare equal.
- *
- * A value counts as quoted only when its closing quote ends it — escapes honoured
- * (`\"` inside double quotes, `''` inside single quotes). Anything else is kept as
- * written, quotes included: a real page titled `"Merged" does not equal "landed" — …`
- * is not valid YAML, and reading it as the quoted scalar `Merged` would throw away the
- * rest of the title.
- *
- * For the same reason an unquoted `#` starts a comment only when whitespace follows it
- * (`# note`). Strict YAML would also cut `Fix for bug #42` down to `Fix for bug`; titles
- * and summaries are prose, where `#42` is a reference, so it is kept.
+ * One frontmatter value as written. This is NOT a YAML parser, and its scope is frozen
+ * — it reads exactly three things and keeps everything else verbatim:
+ *   1. a trailing comment: `#` with whitespace before it and after it (`value  # note`);
+ *      `Fix for bug #42` is prose and stays whole
+ *   2. a double-quoted value whose closing quote ends the value (`\"` and `\\` unescaped)
+ *   3. a single-quoted value whose closing quote ends the value (`''` unescaped)
+ * Anything outside that — block scalars, flow mappings, anchors, a quote that does not
+ * wrap the whole value — is returned as written, and that is by design, not a bug:
+ * a page titled `"Merged" does not equal "landed" — …` must keep its whole title.
  */
 function yamlScalar(raw: string): string {
   const v = raw.trim()

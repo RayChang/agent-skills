@@ -440,20 +440,6 @@ function spellingKey(tag: string): string {
   return tag.toLowerCase().replace(/[-_\s]/g, "")
 }
 
-// Words whose final `s` is not a plural, where the s-less form is a different thing.
-const NOT_PLURAL = new Set(["https", "canvas"])
-
-/**
- * The singular a tag would be the plural of, or null when it does not look like one.
- * Deliberately narrow — a stem under 4 letters (`news` → `new`), a double `s`
- * (`class`), and the known non-plurals are left alone, because a wrong "merge these"
- * costs more than a missed pair.
- */
-function singularOf(key: string): string | null {
-  if (!key.endsWith("s") || key.endsWith("ss") || key.length < 5 || NOT_PLURAL.has(key)) return null
-  return key.slice(0, -1)
-}
-
 export function checkTags(pages: Page[], vocabulary: Set<string>): LintIssue[] {
   const issues: LintIssue[] = []
   const uses = new Map<string, number>()
@@ -480,30 +466,16 @@ export function checkTags(pages: Page[], vocabulary: Set<string>): LintIssue[] {
     const key = spellingKey(tag)
     spellings.set(key, [...(spellings.get(key) ?? []), tag])
   }
-  const listed = (tags: string[]) =>
-    tags
+  for (const group of spellings.values()) {
+    if (group.length < 2) continue
+    const listed = group
       .sort()
       .map((t) => `\`${t}\` (${uses.get(t)})`)
       .join(", ")
-
-  for (const group of spellings.values()) {
-    if (group.length < 2) continue
     issues.push({
       severity: "info",
       category: "tag-audit",
-      message: `Near-duplicate tags: ${listed(group)} — pick one spelling`,
-    })
-  }
-  // A plural pair is reported only when BOTH forms are in use, and as a question:
-  // the script cannot know whether `gate` and `gates` mean the same thing here.
-  for (const [key, group] of spellings) {
-    const singular = singularOf(key)
-    const stem = singular ? spellings.get(singular) : undefined
-    if (!stem) continue
-    issues.push({
-      severity: "info",
-      category: "tag-audit",
-      message: `Possible singular/plural pair: ${listed([...stem, ...group])} — merge them if they mean the same thing`,
+      message: `Near-duplicate tags: ${listed} — pick one spelling`,
     })
   }
 
@@ -554,6 +526,12 @@ export function checkRawDrift(recorded: RecordedSource[], rawHashes: Map<string,
     issues.push({ severity: "warning", category: "raw-drift", message, file })
 
   for (const { file, source, recorded: sha256, candidates } of recorded) {
+    // A placeholder copied from the schema example, or a truncated paste, is a bad
+    // record — reporting it as a changed source would send the reader after the wrong cause.
+    if (!/^[0-9a-f]{64}$/.test(sha256)) {
+      warn(file, `Recorded sha256 is not a valid digest (64 hex characters expected) — re-record it from the raw file`)
+      continue
+    }
     const states = candidates.map((path) => ({ path, state: rawHashes.get(path) }))
     const unread = states.find((s) => !s.state || "error" in s.state)
 
@@ -578,25 +556,6 @@ export function checkRawDrift(recorded: RecordedSource[], rawHashes: Map<string,
 // claim" then means a blockquote indented inside the list item.
 const STATUS_BLOCK = /^\s*>\s*\*\*Status:\s*(Outdated|Disputed)\*\*(.*)$/i
 
-const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s/
-const indentOf = (line: string) => line.length - line.trimStart().length
-
-/**
- * A `>` line indented four or more spaces is a blockquote only inside a list item;
- * anywhere else Markdown reads it as an indented code block — a page showing the
- * format, not using it. It belongs to a list item when the nearest shallower line
- * above it is one.
- */
-function isIndentedCode(lines: string[], i: number): boolean {
-  const indent = indentOf(lines[i])
-  if (indent < 4) return false
-  for (let j = i - 1; j >= 0; j--) {
-    if (lines[j].trim() === "" || indentOf(lines[j]) >= indent) continue
-    return !LIST_ITEM.test(lines[j])
-  }
-  return true
-}
-
 /**
  * `> **Status: Outdated** (YYYY-MM-DD) — why` and `> **Status: Disputed** — what it
  * conflicts with` mark a claim in place instead of silently rewriting it. A block with
@@ -614,7 +573,7 @@ export function checkStatusBlocks(pages: Page[]): LintIssue[] {
       if (/^\s*(```|~~~)/.test(lines[i])) inFence = !inFence
       if (inFence) continue
       const m = lines[i].match(STATUS_BLOCK)
-      if (!m || isIndentedCode(lines, i)) continue
+      if (!m) continue
 
       const kind = m[1].toLowerCase() === "outdated" ? "Outdated" : "Disputed"
       const date = m[2].match(/^\s*\(\d{4}-\d{2}-\d{2}\)/)

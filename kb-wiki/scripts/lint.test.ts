@@ -319,29 +319,20 @@ test("checkTags: spelling variants of one tag are reported together with their u
     ],
     new Set(),
   )
+  // Case and separator variants only: whether `design-token` and `design-tokens` are
+  // the same tag is a judgment call the script does not make.
   expect(issues.map((i) => i.message)).toEqual([
     "Near-duplicate tags: `hostDirectives` (1), `hostdirectives` (1) — pick one spelling",
-    "Possible singular/plural pair: `design-token` (1), `design-tokens` (2) — merge them if they mean the same thing",
   ])
   for (const issue of issues) expect(issue.severity).toBe("info")
 })
 
-test("checkTags: a trailing s is not assumed to be a plural", () => {
-  // Regression: every tag longer than 3 letters ending in `s` was folded onto its
-  // s-less form, so http/https, new/news and canva/canvas were reported as duplicates.
-  const issues = checkTags(
-    [
-      page("concepts/a.md", fm("tags: [http, new, canva, clas, gate]")),
-      page("concepts/b.md", fm("tags: [https, news, canvas, class, gates]")),
-    ],
-    new Set(),
-  )
-  expect(issues.map((i) => i.message)).toEqual([
-    "Possible singular/plural pair: `gate` (1), `gates` (1) — merge them if they mean the same thing",
-  ])
-})
-
 const summary = (fields: string) => page("summaries/report.md", `---\n${fields}\n---\n\n- takeaway`)
+
+// Digests are 64 hex characters; anything else is reported as a bad record.
+const A = "a".repeat(64)
+const B = "b".repeat(64)
+const C = "c".repeat(64)
 
 // `hashes` maps a raw path to its current sha256, or to { error } when unreadable.
 const drift = (summaryFields: string, hashes: Record<string, string | { error: string }>) =>
@@ -351,10 +342,10 @@ const drift = (summaryFields: string, hashes: Record<string, string | { error: s
   )
 
 test("checkRawDrift: matching hash is silent; a changed source is a warning", () => {
-  expect(drift("source: report.md\nsha256: AAA111", { "report.md": "aaa111" })).toEqual([])
-  expect(drift("source: raw/sources/report.md\nsha256: aaa111", { "report.md": "aaa111" })).toEqual([])
+  expect(drift(`source: report.md\nsha256: ${A.toUpperCase()}`, { "report.md": A })).toEqual([])
+  expect(drift(`source: raw/sources/report.md\nsha256: ${A}`, { "report.md": A })).toEqual([])
 
-  const drifted = drift("source: report.md\nsha256: bbb222", { "report.md": "aaa111" })
+  const drifted = drift(`source: report.md\nsha256: ${B}`, { "report.md": A })
   expect(drifted).toHaveLength(1)
   expect(drifted[0].category).toBe("raw-drift")
   expect(drifted[0].severity).toBe("warning")
@@ -362,7 +353,7 @@ test("checkRawDrift: matching hash is silent; a changed source is a warning", ()
 })
 
 test("checkRawDrift: a recorded hash whose source file is gone is flagged", () => {
-  const issues = drift("source: report.md\nsha256: aaa111", {})
+  const issues = drift(`source: report.md\nsha256: ${A}`, {})
   expect(issues).toHaveLength(1)
   expect(issues[0].message).toContain("no longer in raw/sources/")
 })
@@ -370,26 +361,26 @@ test("checkRawDrift: a recorded hash whose source file is gone is flagged", () =
 test("checkRawDrift: summaries without a hash, URL sources, and source lists are skipped", () => {
   // Every summary written before the field existed must stay silent — Migrate does
   // not bulk-rewrite, so absence is the normal state, not a defect.
-  const hashes = { "report.md": "aaa111" }
+  const hashes = { "report.md": A }
   expect(drift("source: report.md", hashes)).toEqual([])
-  expect(drift("source: https://example.com/a\nsha256: bbb222", hashes)).toEqual([])
+  expect(drift(`source: https://example.com/a\nsha256: ${B}`, hashes)).toEqual([])
   // One hash cannot be attributed to several files — not "the file was deleted".
-  expect(drift("source: [report.md, other.md]\nsha256: bbb222", hashes)).toEqual([])
-  expect(recordedSources([page("concepts/x.md", fm("sha256: bbb222"))], ["report.md"])).toEqual([])
+  expect(drift(`source: [report.md, other.md]\nsha256: ${B}`, hashes)).toEqual([])
+  expect(recordedSources([page("concepts/x.md", fm(`sha256: ${B}`))], ["report.md"])).toEqual([])
 })
 
 test("checkRawDrift: a nested source is matched by its unique basename", () => {
-  expect(drift("source: report.md\nsha256: aaa111", { "2026/report.md": "aaa111" })).toEqual([])
+  expect(drift(`source: report.md\nsha256: ${A}`, { "2026/report.md": A })).toEqual([])
 })
 
 test("checkRawDrift: an ambiguous basename is never reported as a deleted file", () => {
   // Regression: two folders each holding notes.md made `source: notes.md` resolve to
   // nothing, and the summary was accused of pointing at a removed raw file.
-  const two = { "2025/notes.md": "aaa111", "2026/notes.md": "ccc333" }
-  expect(drift("source: notes.md\nsha256: ccc333", two)).toEqual([])
-  expect(drift("source: 2025/notes.md\nsha256: aaa111", two)).toEqual([])
+  const two = { "2025/notes.md": A, "2026/notes.md": C }
+  expect(drift(`source: notes.md\nsha256: ${C}`, two)).toEqual([])
+  expect(drift(`source: 2025/notes.md\nsha256: ${A}`, two)).toEqual([])
 
-  const none = drift("source: notes.md\nsha256: bbb222", two)
+  const none = drift(`source: notes.md\nsha256: ${B}`, two)
   expect(none).toHaveLength(1)
   expect(none[0].message).toContain(`None of the 2 raw files named "notes.md"`)
   expect(none[0].message).not.toContain("no longer in raw/sources/")
@@ -398,10 +389,10 @@ test("checkRawDrift: an ambiguous basename is never reported as a deleted file",
 test("checkRawDrift: an unreadable source is its own finding and names the real error", () => {
   // The cause is reported, not guessed: a file that vanished mid-run (ENOENT) or a
   // broken symlink is not a permissions problem.
-  const denied = drift("source: report.pdf\nsha256: aaa111", { "report.pdf": { error: "EACCES" } })
+  const denied = drift(`source: report.pdf\nsha256: ${A}`, { "report.pdf": { error: "EACCES" } })
   expect(denied).toHaveLength(1)
   expect(denied[0].message).toBe("Cannot read raw/sources/report.pdf (EACCES) to verify its recorded sha256")
-  const gone = drift("source: report.pdf\nsha256: aaa111", { "report.pdf": { error: "ENOENT" } })
+  const gone = drift(`source: report.pdf\nsha256: ${A}`, { "report.pdf": { error: "ENOENT" } })
   expect(gone[0].message).toContain("(ENOENT)")
 })
 
@@ -411,8 +402,19 @@ test("recordedSources: only files a summary recorded a hash for — none in a KB
   const raw = ["report.md", "2025/notes.md", "2026/notes.md", "huge.pdf"]
   const candidates = (fields: string) => recordedSources([summary(fields)], raw).flatMap((r) => r.candidates)
   expect(candidates("source: report.md")).toEqual([])
-  expect(candidates("source: report.md\nsha256: aaa111")).toEqual(["report.md"])
-  expect(candidates("source: notes.md\nsha256: aaa111")).toEqual(["2025/notes.md", "2026/notes.md"])
+  expect(candidates(`source: report.md\nsha256: ${A}`)).toEqual(["report.md"])
+  expect(candidates(`source: notes.md\nsha256: ${A}`)).toEqual(["2025/notes.md", "2026/notes.md"])
+})
+
+test("checkRawDrift: a recorded value that is not a digest is reported as such, not as a changed source", () => {
+  // Regression: the schema example reads `sha256: <hex digest>`. A summary that kept the
+  // placeholder, or lost characters in a paste, was told its raw source had changed.
+  for (const bad of ["<hex digest>", A.slice(0, 63), "not-a-hash"]) {
+    const issues = drift(`source: report.md\nsha256: ${bad}`, { "report.md": A })
+    expect(issues).toHaveLength(1)
+    expect(issues[0].message).toContain("not a valid digest")
+    expect(issues[0].message).not.toContain("changed since ingest")
+  }
 })
 
 test("checkStatusBlocks: well-formed Outdated and Disputed blocks are silent", () => {
@@ -462,17 +464,6 @@ test("checkStatusBlocks: a block indented under a list item is checked too", () 
     "Status: Outdated block has no (YYYY-MM-DD) date",
     "Status: Outdated block has no explanation — say what replaced the claim or what it conflicts with",
   ])
-})
-
-test("checkStatusBlocks: an indented code block showing the format is not a Status block", () => {
-  // Regression: allowing leading whitespace made a 4-space code block (the un-fenced
-  // Markdown way to show an example) count as a real, malformed Status block.
-  const example = ["Write it like this:", "", "    > **Status: Outdated**", ""].join("\n")
-  expect(checkStatusBlocks([page("concepts/a.md", example)])).toEqual([])
-
-  // The same four spaces under a nested list item are a real blockquote.
-  const nested = ["- Sessions", "  - live in Redis.", "    > **Status: Disputed**"].join("\n")
-  expect(checkStatusBlocks([page("concepts/b.md", nested)])).toHaveLength(1)
 })
 
 test("checkStatusBlocks: a CRLF page is checked like an LF one", () => {
