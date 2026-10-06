@@ -3,6 +3,7 @@ import { existsSync } from "node:fs"
 import { resolve, relative, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import { spawnSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import { config } from "./config.ts"
 
 // ─── Developer identity ───────────────────────────────────
@@ -182,6 +183,26 @@ export async function readRawTextSources(): Promise<
 
   await walk(config.kb.rawSources)
   return results
+}
+
+/**
+ * SHA-256 of every raw source file, keyed by path relative to kb/raw/sources/. Hashes
+ * bytes, not decoded text, so it covers binary sources and matches `shasum -a 256` /
+ * `sha256sum` — the value Ingest records in a summary's `sha256` field.
+ */
+export async function hashRawSources(): Promise<Map<string, string>> {
+  const hashes = new Map<string, string>()
+  for (const rel of await listRawSourceFiles()) {
+    const bytes = await readFile(resolve(config.kb.rawSources, rel))
+    hashes.set(rel, createHash("sha256").update(bytes).digest("hex"))
+  }
+  return hashes
+}
+
+/** Line count as `wc -l` reports it for newline-terminated text (a final newline adds no line). */
+export function lineCount(text: string): number {
+  if (text === "") return 0
+  return text.split("\n").length - (text.endsWith("\n") ? 1 : 0)
 }
 
 /**

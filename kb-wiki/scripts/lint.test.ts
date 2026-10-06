@@ -131,6 +131,238 @@ test("checkInjectionMarkers: pipe-to-shell and exfiltration stay warnings", () =
   for (const issue of issues) expect(issue.severity).toBe("warning")
 })
 
+// ─── hygiene checks ───────────────────────────────────────
+
+import {
+  checkOversizedPages,
+  checkIndexSize,
+  parseTags,
+  parseTagVocabulary,
+  checkTags,
+  checkRawDrift,
+  checkStatusBlocks,
+  checkSeedlingAge,
+} from "./lint"
+
+const LIMITS = {
+  pageInfoLines: 4,
+  pageWarnLines: 8,
+  indexMaxBytes: 300,
+  oneLinerMaxChars: 40,
+  seedlingDays: 90,
+}
+const fm = (fields: string) => `---\ntitle: T\ncategory: concepts\n${fields}\n---\n\n# T\n`
+const linesOf = (n: number) => Array.from({ length: n }, (_, i) => `line ${i + 1}`).join("\n") + "\n"
+
+test("checkOversizedPages: info over the soft limit, warning over the hard one, meta files exempt", () => {
+  const issues = checkOversizedPages(
+    [
+      page("concepts/fits.md", linesOf(4)),
+      page("concepts/long.md", linesOf(5)),
+      page("concepts/huge.md", linesOf(9)),
+      // Generated or append-only files grow without bound by design.
+      page("log/dev.md", linesOf(50)),
+      page("concepts/_moc.md", linesOf(50)),
+      page("index.md", linesOf(50)),
+    ],
+    LIMITS,
+  )
+  expect(issues.map((i) => [i.file, i.severity])).toEqual([
+    ["concepts/long.md", "info"],
+    ["concepts/huge.md", "warning"],
+  ])
+  expect(issues[1].message).toContain("9 lines")
+})
+
+const longLine = "x".repeat(60)
+
+test("checkIndexSize: an oversized index is ONE warning naming the longest one-liners", () => {
+  // Regression guard for the measured failure: 217 lines but 85 KB, because one-liners
+  // had grown into paragraphs. A per-entry finding would bury the report.
+  const entries = ["a", "b", "c", "d", "e"].map((s) => `- [[concepts/${s}]] — ${longLine}${s}`)
+  entries.push(`- [[concepts/short]] — fine`)
+  const issues = checkIndexSize([page("index.md", entries.join("\n"))], LIMITS)
+  expect(issues).toHaveLength(1)
+  expect(issues[0].severity).toBe("warning")
+  expect(issues[0].category).toBe("index-size")
+  expect(issues[0].message).toContain("5 of 6 one-liners exceed 40 chars")
+  expect(issues[0].message).toContain("[[concepts/a]] (61)")
+})
+
+test("checkIndexSize: long one-liners under the size limit are a single info nudge", () => {
+  const issues = checkIndexSize(
+    [page("index.md", `- [[concepts/a]] — ${longLine}\n- [[concepts/b]] — short`)],
+    LIMITS,
+  )
+  expect(issues).toHaveLength(1)
+  expect(issues[0].severity).toBe("info")
+  expect(issues[0].message).toContain("1 of 2 one-liners")
+})
+
+test("checkIndexSize: a compact index, or no index at all, reports nothing", () => {
+  expect(checkIndexSize([page("index.md", "- [[concepts/a]] — short")], LIMITS)).toEqual([])
+  expect(checkIndexSize([page("concepts/a.md", "body")], LIMITS)).toEqual([])
+})
+
+test("parseTags: reads inline and block lists, strips quotes", () => {
+  expect(parseTags(`title: T\ntags: [alpha, "beta", 'gamma']`)).toEqual(["alpha", "beta", "gamma"])
+  expect(parseTags(`tags:\n  - alpha\n  - "beta"\nstatus: seedling`)).toEqual(["alpha", "beta"])
+  expect(parseTags(`title: T`)).toEqual([])
+  expect(parseTags(`tags: []`)).toEqual([])
+})
+
+test("parseTagVocabulary: reads bullets under the heading only, stops at the next heading", () => {
+  const schema = [
+    "# Demo Knowledge Base — Schema",
+    "## Page Format",
+    "- not-a-tag",
+    "## Tag Vocabulary",
+    "Prose in the section is ignored.",
+    "- angular",
+    "- `nx` — the monorepo tool",
+    "* i18n: translations",
+    "## Roles",
+    "- human",
+  ].join("\n")
+  expect([...parseTagVocabulary(schema)]).toEqual(["angular", "nx", "i18n"])
+  expect(parseTagVocabulary(null).size).toBe(0)
+  expect(parseTagVocabulary("## Tag Vocabulary\n\nNothing listed yet.\n").size).toBe(0)
+})
+
+test("checkTags: without a vocabulary, unknown tags are not flagged (opt-in)", () => {
+  // Measured on a real 185-page KB: 723 distinct tags, 500 used once. Enforcing a
+  // vocabulary nobody wrote would flag every page.
+  const issues = checkTags([page("concepts/a.md", fm("tags: [anything, goes]"))], new Set())
+  expect(issues).toEqual([])
+})
+
+test("checkTags: with a vocabulary, one warning per page lists its unlisted tags", () => {
+  const issues = checkTags(
+    [
+      page("concepts/a.md", fm("tags: [angular, mystery, other]")),
+      page("concepts/b.md", fm("tags: [angular]")),
+      page("summaries/s.md", "---\nsource: s.md\ntags: [unlisted]\n---\n"),
+    ],
+    new Set(["angular"]),
+  )
+  expect(issues).toHaveLength(1)
+  expect(issues[0].severity).toBe("warning")
+  expect(issues[0].file).toBe("concepts/a.md")
+  expect(issues[0].message).toContain("`mystery`, `other`")
+})
+
+test("checkTags: spelling variants of one tag are reported together with their use counts", () => {
+  const issues = checkTags(
+    [
+      page("concepts/a.md", fm("tags: [design-token, hostDirectives, css]")),
+      page("concepts/b.md", fm("tags: [design-tokens, hostdirectives, cs]")),
+      page("concepts/c.md", fm("tags: [design-tokens]")),
+    ],
+    new Set(),
+  )
+  expect(issues.map((i) => i.message)).toEqual([
+    "Near-duplicate tags: `design-token` (1), `design-tokens` (2) — pick one spelling",
+    "Near-duplicate tags: `hostDirectives` (1), `hostdirectives` (1) — pick one spelling",
+  ])
+  for (const issue of issues) expect(issue.severity).toBe("info")
+})
+
+const summary = (fields: string) => page("summaries/report.md", `---\n${fields}\n---\n\n- takeaway`)
+
+test("checkRawDrift: matching hash is silent; a changed source is a warning", () => {
+  const hashes = new Map([["report.md", "aaa111"]])
+  expect(checkRawDrift([summary("source: report.md\nsha256: AAA111")], hashes)).toEqual([])
+  expect(checkRawDrift([summary("source: raw/sources/report.md\nsha256: aaa111")], hashes)).toEqual([])
+
+  const drifted = checkRawDrift([summary("source: report.md\nsha256: bbb222")], hashes)
+  expect(drifted).toHaveLength(1)
+  expect(drifted[0].category).toBe("raw-drift")
+  expect(drifted[0].severity).toBe("warning")
+  expect(drifted[0].message).toContain("sha256 mismatch: raw/sources/report.md")
+})
+
+test("checkRawDrift: a recorded hash whose source file is gone is flagged", () => {
+  const issues = checkRawDrift([summary("source: report.md\nsha256: aaa111")], new Map())
+  expect(issues).toHaveLength(1)
+  expect(issues[0].message).toContain("no longer in raw/sources/")
+})
+
+test("checkRawDrift: summaries without a hash, and URL sources, are skipped", () => {
+  // Every summary written before the field existed must stay silent — Migrate does
+  // not bulk-rewrite, so absence is the normal state, not a defect.
+  const hashes = new Map([["report.md", "aaa111"]])
+  expect(checkRawDrift([summary("source: report.md")], hashes)).toEqual([])
+  expect(checkRawDrift([summary("source: https://example.com/a\nsha256: bbb222")], hashes)).toEqual([])
+  expect(checkRawDrift([page("concepts/x.md", fm("sha256: bbb222"))], hashes)).toEqual([])
+})
+
+test("checkRawDrift: a nested source is matched by its unique basename", () => {
+  const hashes = new Map([["2026/report.md", "aaa111"]])
+  expect(checkRawDrift([summary("source: report.md\nsha256: aaa111")], hashes)).toEqual([])
+})
+
+test("checkStatusBlocks: well-formed Outdated and Disputed blocks are silent", () => {
+  const body = [
+    "The limit is 5.",
+    "> **Status: Outdated** (2026-10-06) — was 5; now 7 (`config.ts:12`)",
+    "",
+    "> **Status: Disputed** — conflicts with [[concepts/other]]: 5 vs 7",
+    "",
+    "> **Status: Outdated** (2026-10-06)",
+    "> Replaced by [[concepts/new]].",
+  ].join("\n")
+  expect(checkStatusBlocks([page("concepts/a.md", body)])).toEqual([])
+})
+
+test("checkStatusBlocks: flags a missing date and a missing explanation", () => {
+  const body = [
+    "> **Status: Outdated** — superseded",
+    "",
+    "> **Status: Disputed**",
+    "",
+    "> **Status: Outdated**",
+    "> **Status: Disputed** — the block above must not borrow this line",
+  ].join("\n")
+  const messages = checkStatusBlocks([page("concepts/a.md", body)]).map((i) => i.message)
+  expect(messages).toEqual([
+    "Status: Outdated block has no (YYYY-MM-DD) date",
+    "Status: Disputed block has no explanation — say what replaced the claim or what it conflicts with",
+    "Status: Outdated block has no (YYYY-MM-DD) date",
+    "Status: Outdated block has no explanation — say what replaced the claim or what it conflicts with",
+  ])
+})
+
+test("checkStatusBlocks: ignores the format shown inside a code fence and other status notes", () => {
+  const body = [
+    "```markdown",
+    "> **Status: Outdated**",
+    "```",
+    "> ⚠️ **Status: forward-design, not yet implemented.**",
+    "> **Status: Draft**",
+  ].join("\n")
+  expect(checkStatusBlocks([page("concepts/a.md", body)])).toEqual([])
+  expect(checkStatusBlocks([page("log/dev.md", "> **Status: Outdated**")])).toEqual([])
+})
+
+test("checkSeedlingAge: flags only seedlings older than the limit", () => {
+  const now = new Date(2026, 9, 6) // 2026-10-06 local
+  const issues = checkSeedlingAge(
+    [
+      page("concepts/old.md", fm("status: seedling\ncreated: 2026-06-01")),
+      page("concepts/edge.md", fm("status: seedling\ncreated: 2026-07-08")), // exactly 90 days
+      page("concepts/new.md", fm('status: seedling\ncreated: "2026-09-30"')),
+      page("concepts/grown.md", fm("status: mature\ncreated: 2025-01-01")),
+      page("concepts/undated.md", fm("status: seedling")),
+    ],
+    now,
+    90,
+  )
+  expect(issues).toHaveLength(1)
+  expect(issues[0].file).toBe("concepts/old.md")
+  expect(issues[0].severity).toBe("info")
+  expect(issues[0].message).toContain("Seedling for 127 days (created 2026-06-01)")
+})
+
 // ─── report retention ─────────────────────────────────────
 
 test("pruneOldReports: keeps the newest 3, ignores non-report files", async () => {
@@ -205,4 +437,17 @@ test("findingsToIssues: keeps schema fields, coerces unknown severity to info, d
 
 test("buildDeepPrompt: tells the model index/log/summaries are omitted on purpose", () => {
   expect(buildDeepPrompt([])).toMatch(/deliberately omitted.*do not report them as missing/s)
+})
+
+// ─── shipped schema template ──────────────────────────────
+
+import { readFile } from "fs/promises"
+
+test("the schema template ships with an empty Tag Vocabulary (a fresh KB enforces nothing)", async () => {
+  // The section's own instructions mention `- tag — when to use it` inline; if that were
+  // ever reformatted into a real bullet, every new KB would start with "tag" as its
+  // whole vocabulary and lint would warn on every page.
+  const template = await readFile(join(import.meta.dir, "../assets/schema.md"), "utf8")
+  expect(template).toMatch(/^## Tag Vocabulary$/m)
+  expect(parseTagVocabulary(template).size).toBe(0)
 })

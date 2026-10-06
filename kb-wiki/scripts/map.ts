@@ -15,7 +15,16 @@
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import { config, discoverCategories } from "./lib/config.ts"
-import { readAllWikiPages, appendLog, todayDate, isLogFile, readText, writeText, isDirectRun } from "./lib/kb.ts"
+import {
+  readAllWikiPages,
+  appendLog,
+  todayDate,
+  isLogFile,
+  readText,
+  writeText,
+  isDirectRun,
+  lineCount,
+} from "./lib/kb.ts"
 // NOTE: ./lib/ai (which imports @anthropic-ai/sdk) is intentionally NOT imported at the top
 // level. The default deterministic rebuild must run with zero SDK dependency; only the
 // --deep LLM path loads it, lazily, inside main(). A static import here would make the SDK
@@ -126,6 +135,28 @@ export function resolveSummary(
 ): string {
   const kept = preserved.get(slug)
   return kept && kept.trim() ? kept : fallback
+}
+
+/**
+ * What index.md costs to read. Every operation reads it first, so its size is the KB's
+ * fixed per-operation overhead — and that is driven by one-liner length, not line count.
+ * `long` lists entries over `oneLinerMaxChars`, longest first. Pure: shared by map's
+ * Stats block and lint's index-size check.
+ */
+export function indexStats(
+  indexContent: string,
+  oneLinerMaxChars: number,
+): { bytes: number; lines: number; entries: number; long: Array<{ slug: string; chars: number }> } {
+  const entries = [...parseIndexSummaries(indexContent)].map(([slug, summary]) => ({
+    slug,
+    chars: summary.length,
+  }))
+  return {
+    bytes: Buffer.byteLength(indexContent, "utf8"),
+    lines: lineCount(indexContent),
+    entries: entries.length,
+    long: entries.filter((e) => e.chars > oneLinerMaxChars).sort((a, b) => b.chars - a.chars),
+  }
 }
 
 // ─── Index Builder ────────────────────────────────────────
@@ -485,6 +516,21 @@ async function main() {
   console.log(`Total links:    ${totalLinks}`)
   console.log(`Avg links/page: ${(totalLinks / (contentPages.length || 1)).toFixed(1)}`)
   console.log(`Orphan pages:   ${orphans.length}`)
+
+  // Size stats — the same thresholds lint enforces (oversized, index-size), printed on
+  // every rebuild so growth is visible before it becomes a lint finding.
+  const { pageInfoLines, pageWarnLines, oneLinerMaxChars } = config.lint
+  const pageLines = contentPages.map((p) => lineCount(p.content)).sort((a, b) => a - b)
+  const index = indexStats(indexContent, oneLinerMaxChars)
+  console.log(
+    `Page lines:     median ${pageLines[Math.floor(pageLines.length / 2)] ?? 0}` +
+      ` · >${pageInfoLines}: ${pageLines.filter((n) => n > pageInfoLines).length}` +
+      ` · >${pageWarnLines}: ${pageLines.filter((n) => n > pageWarnLines).length}`,
+  )
+  console.log(
+    `Index:          ${index.lines} lines, ${(index.bytes / 1000).toFixed(1)} KB` +
+      ` · one-liners >${oneLinerMaxChars} chars: ${index.long.length} of ${index.entries}`,
+  )
 
   // LLM cross-link discovery
   let injectedLinks: string[] = []

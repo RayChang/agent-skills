@@ -135,3 +135,32 @@ test("lint --deep with the SDK absent fails actionably after completing structur
     await rm(d, { recursive: true, force: true })
   }
 })
+
+// ─── Raw-drift wiring: the hash is computed from the real file bytes ─────────
+
+test("lint flags a raw source edited after ingest, and stays silent when the hash matches", async () => {
+  const d = await mkdtemp(join(tmpdir(), "kblint-"))
+  try {
+    await seedMinimalKb(d)
+    await mkdir(join(d, "kb/raw/sources"), { recursive: true })
+    await mkdir(join(d, "kb/wiki/summaries"), { recursive: true })
+    await writeFile(join(d, "kb/raw/sources/report.md"), "original text\n")
+    const sha256 = new Bun.CryptoHasher("sha256").update("original text\n").digest("hex")
+    await writeFile(
+      join(d, "kb/wiki/summaries/report.md"),
+      `---\nsource: report.md\nsha256: ${sha256}\ningested: 2026-10-06\ntags: [a]\n---\n\n# Report — Summary\n\n- takeaway\n`,
+    )
+
+    const clean = await run(lintPath, d)
+    expect(clean.exitCode).toBe(0)
+    expect(clean.stdout).not.toContain("raw-drift")
+
+    await writeFile(join(d, "kb/raw/sources/report.md"), "edited after ingest\n")
+    const drifted = await run(lintPath, d)
+    expect(drifted.exitCode).toBe(0) // a warning, not an error
+    expect(drifted.stdout).toContain("## raw-drift")
+    expect(drifted.stdout).toContain("sha256 mismatch: raw/sources/report.md")
+  } finally {
+    await rm(d, { recursive: true, force: true })
+  }
+})

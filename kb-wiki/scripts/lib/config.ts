@@ -51,6 +51,18 @@ export const config = {
     maxTokens: positiveIntEnv("KB_MAX_TOKENS", 32000),
     effort: effortEnv("KB_EFFORT", "high"),
   },
+  // Thresholds for the deterministic hygiene checks (lint) and the size stats (map).
+  // Sizes are what an agent pays to read: index.md is read first by every operation,
+  // so it is budgeted in bytes — a line count hides long one-liners (a 217-line index
+  // measured 85 KB). Override per project via env when a KB legitimately differs.
+  lint: {
+    pageInfoLines: positiveIntEnv("KB_PAGE_INFO_LINES", 400),
+    pageWarnLines: positiveIntEnv("KB_PAGE_WARN_LINES", 800),
+    indexMaxBytes: positiveIntEnv("KB_INDEX_MAX_BYTES", 50_000),
+    // The schema asks for a one-sentence (≤25 words) summary; 200 chars is that with slack.
+    oneLinerMaxChars: positiveIntEnv("KB_ONE_LINER_MAX_CHARS", 200),
+    seedlingDays: positiveIntEnv("KB_SEEDLING_DAYS", 90),
+  },
 } as const
 
 /**

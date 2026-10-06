@@ -198,3 +198,35 @@ test("normalizeSuggestions: caps at MAX_SUGGESTIONS (schema cannot express maxIt
   const many = Array.from({ length: 30 }, (_, i) => ({ source: "a/x", target: `a/y${i}`, reason: "r" }))
   expect(normalizeSuggestions(many)).toHaveLength(20)
 })
+
+// ─── Size stats ───────────────────────────────────────────
+
+import { indexStats } from "./map"
+
+test("indexStats: counts entries and lists over-long one-liners, longest first", () => {
+  const index = [
+    "# Demo Wiki — Index",
+    "",
+    "## Concepts (3)",
+    `- [[concepts/a]] — ${"x".repeat(30)}`,
+    `- [[concepts/b|Alias]] — ${"y".repeat(50)}`,
+    "- [[concepts/c]] — short",
+    "",
+  ].join("\n")
+  const stats = indexStats(index, 20)
+  expect(stats.entries).toBe(3)
+  expect(stats.lines).toBe(6)
+  expect(stats.long).toEqual([
+    { slug: "concepts/b", chars: 50 },
+    { slug: "concepts/a", chars: 30 },
+  ])
+})
+
+test("indexStats: size is bytes, not characters — CJK one-liners cost three bytes each", () => {
+  // The index budget is what an agent pays to read the file; a character count would
+  // under-report a Chinese-language KB by 3x.
+  const stats = indexStats("- [[concepts/a]] — 知識庫", 200)
+  expect(stats.bytes).toBe(Buffer.byteLength("- [[concepts/a]] — 知識庫", "utf8"))
+  expect(stats.bytes).toBeGreaterThan("- [[concepts/a]] — 知識庫".length)
+  expect(stats.long).toEqual([])
+})

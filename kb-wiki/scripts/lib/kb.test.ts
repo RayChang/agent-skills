@@ -203,3 +203,14 @@ test("writeLogEntry: adopts new layout with no pre-existing dir (Bun.write auto-
   expect(await Bun.file(path).exists()).toBe(true)
   expect(await Bun.file(path).text()).toContain("# Wiki — Log (ray-chang)")
 })
+
+// ─── lineCount ────────────────────────────────────────────
+
+import { lineCount } from "./kb"
+
+test("lineCount: matches wc -l for newline-terminated text and counts an unterminated last line", () => {
+  expect(lineCount("")).toBe(0)
+  expect(lineCount("a\nb\n")).toBe(2)
+  expect(lineCount("a\nb")).toBe(2)
+  expect(lineCount("a\n\n")).toBe(2)
+})
