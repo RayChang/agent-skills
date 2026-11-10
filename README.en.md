@@ -2,11 +2,11 @@
 
 # 🛠️ Agent Skills
 
-**A collection of agent skills for [Claude Code](https://claude.com/claude-code)**
+**A collection of agent skills for [Claude Code](https://claude.com/claude-code); `dispatch` also supports [Codex CLI](https://github.com/openai/codex) and [Copilot CLI](https://github.com/github/copilot-cli)**
 
 [![GitHub](https://img.shields.io/badge/GitHub-RayChang%2Fagent--skills-181717?logo=github)](https://github.com/RayChang/agent-skills)
 [![Claude Code](https://img.shields.io/badge/Claude-Code-D97757?logo=anthropic&logoColor=white)](https://claude.com/claude-code)
-![Skills](https://img.shields.io/badge/skills-5-blue)
+![Skills](https://img.shields.io/badge/skills-6-blue)
 ![Docs](https://img.shields.io/badge/docs-English-green)
 
 [繁體中文](./README.md) · **English**
@@ -24,6 +24,7 @@
 | [✅ `cove`](#-cove) | Agentic CoVe 2.0: open-book three-phase self-verification | `/cove` |
 | [🧱 `harness-init`](#-harness-init) | Project harness scaffolding (unified layout spec) | `/harness-init` |
 | [🔌 `mcp-agent`](#-mcp-agent) | Wrap a single MCP server as a project-scoped subagent (token/permission isolation) | `/mcp-agent` |
+| [📮 `dispatch`](#-dispatch) | Hand an approved implementation plan to model-tiered subagents (Claude Code / Codex / Copilot) | `/dispatch` |
 
 ---
 
@@ -52,6 +53,7 @@ Describe what you need; Claude picks the right skill based on its description:
 | "Verify the last answer" | ✅ `cove` |
 | "Scaffold this project's harness" | 🧱 `harness-init` |
 | "Wrap the Figma MCP server as an agent" | 🔌 `mcp-agent` |
+| "Dispatch this plan" | 📮 `dispatch` |
 
 ### 2️⃣ Slash command triggering
 
@@ -63,6 +65,7 @@ Type `/<skill-name>` or `/<skill-name> <operation>`:
 /cove                # Verify the last response
 /harness-init        # Scaffold the project harness
 /mcp-agent           # Wrap an MCP server as a project-scoped agent
+/dispatch            # Dispatch an approved plan
 ```
 
 > 💡 Type `/` in Claude Code to browse available skills, or run `/help` for details.
@@ -331,3 +334,49 @@ npx skills add RayChang/agent-skills@mcp-agent
 At the target project root, say "wrap the `<server>` MCP server as an agent" (or `/mcp-agent`). Your only preparation: put the server's credential in a shell environment variable. The flow: decision gate → detect/ask (one question at a time, with recommended defaults) → generate `.claude/agents/<server>-worker.md` → smoke test → fixed-format report.
 
 > 🔑 Rotating a credential means changing the env var's value — the agent file never changes.
+
+---
+
+### 📮 `dispatch`
+
+A standard procedure for handing tasks to model-tiered subagents once a plan and spec are agreed. The rules come from Anthropic's "[Which Claude model should you build with?](https://claude.dev/blog/which-claude-model-should-you-build-with/)", and the same skill works in Claude Code, Codex CLI and Copilot CLI.
+
+#### Highlights
+
+- **Four tiers, one map**: the rules speak only of `lead` / `default` / `scoped` / `chore`; each tool's model names live in `references/tiers.md`, the only place to touch when models change
+- **Four workers**: `dispatch-scout` (read-only chores), `dispatch-implementer` (implements from a task brief), `dispatch-verifier` (fresh-context verification), `dispatch-expert` (hard tasks when the main session runs below the `lead` tier)
+- **Dispatch table first, approval before dispatch**: a single dependency chain, or fewer than two independent tasks, ends in "do not split"
+- **Implementers never self-verify**: every task needs an acceptance command, re-run by the verifier
+- **Bounded failure handling**: retry once at higher effort → main session takes over → ask whether to escalate to the expert; never an automatic move to a costlier model
+
+#### 🗺️ Tiers and models
+
+| Tier | Work | Claude Code | Codex CLI | Copilot CLI |
+|---|---|---|---|---|
+| `lead` | major refactors, migrations, architecture, deep analysis | Fable 5.2 | `gpt-6-astra` | `gpt-6-astra` |
+| `default` | everyday complex engineering, debugging (the main session) | Opus 5.5 | `gpt-6.1-sol` | `claude-opus-5.5` |
+| `scoped` | well-scoped implementation, verification | Sonnet 5.5 | `gpt-6.1-terra` | `claude-sonnet-5.5` |
+| `chore` | search, log reading, summarizing | Haiku 5.5 | `gpt-6-luna` | `claude-haiku-5.5` |
+
+| Worker | Tier | May edit | Starting effort |
+|---|---|---|---|
+| `dispatch-scout` | `chore` | no | model default |
+| `dispatch-implementer` | `scoped` | yes | `medium` |
+| `dispatch-verifier` | `scoped` | no | `medium` |
+| `dispatch-expert` | `lead` | yes | `medium` |
+
+> 📅 Tested on 2026-11-10 with Claude Code 2.1, Codex CLI 0.166.0 and Copilot CLI 1.0.106. The Codex mapping is by price ratio; per-tool caveats are in [`dispatch/references/tiers.md`](./dispatch/references/tiers.md).
+
+#### 📥 Install
+
+```bash
+npx skills add RayChang/agent-skills@dispatch
+```
+
+On first use in a tool, the skill copies that tool's four worker definitions to the user level (`~/.claude/agents/`, `~/.codex/agents/`, `~/.copilot/agents/`).
+
+#### 🎬 Usage
+
+After a plan is approved, say "dispatch this plan" (or `/dispatch`). The flow: read the plan → route each task → decide whether to split → dispatch table (waits for your approval) → dispatch and verify → report. Each task in the plan should list the files it changes and an acceptance command; a task without a file list runs sequentially only.
+
+> 🔁 When models change, update only `references/tiers.md` and the `model` lines in `agents/<tool>/`.
