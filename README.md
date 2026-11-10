@@ -2,12 +2,12 @@
 
 # 🛠️ Agent Skills
 
-**適用於 [Claude Code](https://claude.com/claude-code) 與 [Gemini CLI](https://github.com/google/gemini-cli) 的通用 agent skills 集合**
+**適用於 [Claude Code](https://claude.com/claude-code) 與 [Gemini CLI](https://github.com/google/gemini-cli) 的通用 agent skills 集合；`dispatch` 另支援 [Codex CLI](https://github.com/openai/codex) 與 [Copilot CLI](https://github.com/github/copilot-cli)**
 
 [![GitHub](https://img.shields.io/badge/GitHub-RayChang%2Fagent--skills-181717?logo=github)](https://github.com/RayChang/agent-skills)
 [![Claude Code](https://img.shields.io/badge/Claude-Code-D97757?logo=anthropic&logoColor=white)](https://claude.com/claude-code)
 [![Gemini CLI](https://img.shields.io/badge/Gemini-CLI-4285F4?logo=google-gemini&logoColor=white)](https://github.com/google/gemini-cli)
-![Skills](https://img.shields.io/badge/skills-5-blue)
+![Skills](https://img.shields.io/badge/skills-6-blue)
 ![Docs](https://img.shields.io/badge/docs-繁體中文-green)
 
 **繁體中文** · [English](./README.en.md)
@@ -25,6 +25,7 @@
 | [✅ `cove`](#-cove) | Agentic CoVe 2.0：開卷三階段自我驗證 | `/cove` |
 | [🧱 `harness-init`](#-harness-init) | 專案 harness 骨架落地（統一目錄規範） | `/harness-init` |
 | [🔌 `mcp-agent`](#-mcp-agent) | 把單一 MCP server 封裝成專案級 subagent（token／權限隔離） | `/mcp-agent` |
+| [📮 `dispatch`](#-dispatch) | 依模型層級把已核准的實作計劃派給 subagent（Claude Code／Codex／Copilot 通用） | `/dispatch` |
 
 ---
 
@@ -34,7 +35,7 @@
 npx skills add RayChang/agent-skills@<skill-name>
 ```
 
-> 在專案目錄內執行時，skill 實體會放在專案的 `.agents/skills/<skill-name>/`，並在 `.claude/skills/` 建立 symlink（Claude Code 啟動時自動載入）。加上 global 旗標則安裝到 user-level 的 `~/.agents/skills/`。**更新已安裝的 skill = 在該專案重跑同一條安裝指令**（skill 是複製部署，改 repo 不會自動生效）。
+> 在專案目錄內執行時，skill 實體會放在專案的 `.agents/skills/<skill-name>/`，並在 `.claude/skills/` 建立 symlink（Claude Code 啟動時自動載入）。加上 global 旗標則安裝到 user-level 的 `~/.agents/skills/`。**更新已安裝的 skill = 在該專案重跑同一條安裝指令**（skill 是複製部署，改 repo 不會自動生效）。Codex CLI 與 Copilot CLI 也會讀取 `.agents/skills/` 與 `~/.agents/skills/`，不需要另外安裝。
 
 ---
 
@@ -53,6 +54,7 @@ Skills 可透過兩種方式觸發：
 | 「對剛剛的回答做驗證」 | ✅ `cove` |
 | 「幫這個專案建立 harness 骨架」 | 🧱 `harness-init` |
 | 「把 Figma MCP 包成一個 agent」 | 🔌 `mcp-agent` |
+| 「依這份計劃派工」 | 📮 `dispatch` |
 
 ### 2️⃣ Slash command 觸發
 
@@ -64,6 +66,7 @@ Skills 可透過兩種方式觸發：
 /cove                # 驗證上一則回答
 /harness-init        # 落地專案 harness 骨架
 /mcp-agent           # 封裝 MCP server 成專案級 agent
+/dispatch            # 依已核准的計劃派工
 ```
 
 > 💡 在 Agent 中輸入 `/` 可查看所有可用 skill，或執行 `/help` 查看說明。
@@ -308,3 +311,49 @@ npx skills add RayChang/agent-skills@mcp-agent
 在目標專案根目錄說「把 `<server>` MCP 包成 agent」（或 `/mcp-agent`）。你只需準備一件事：把 server 的認證放進 shell 環境變數。流程：決策閘 → 偵測／提問（一次一題附建議預設）→ 產出 `.claude/agents/<server>-worker.md` → 煙霧測試 → 固定格式報告。
 
 > 🔑 換金鑰時只改環境變數的值，agent 檔永遠不用動。
+
+---
+
+### 📮 `dispatch`
+
+計劃與規格談定後，把任務依模型層級派給 subagent 的標準流程。規則出自 Anthropic 的〈[Which Claude model should you build with?](https://claude.dev/blog/which-claude-model-should-you-build-with/)〉，同一份 skill 可在 Claude Code、Codex CLI、Copilot CLI 使用。
+
+#### 特性
+
+- **四個層級、一張對應表**：規則只講 `lead`／`default`／`scoped`／`chore`，各工具的模型名集中在 `references/tiers.md`，模型改版只改那一處
+- **四個 worker**：`dispatch-scout`（唯讀雜務）、`dispatch-implementer`（照任務單實作）、`dispatch-verifier`（全新 context 驗收）、`dispatch-expert`（主 session 低於 `lead` 層時處理困難任務）
+- **先出派工表、等你同意才派**：單一依賴鏈或獨立任務少於兩個時，結論會是「不拆」
+- **實作者不自驗**：每個任務都要有可自動執行的驗收指令，由 verifier 重跑
+- **失敗處理有上限**：調高 effort 重做一次 → 主 session 接手 → 詢問是否升級到 expert；不會自動換更貴的模型
+
+#### 🗺️ 層級與模型對應
+
+| 層級 | 適用工作 | Claude Code | Codex CLI | Copilot CLI |
+|---|---|---|---|---|
+| `lead` | 大型重構、遷移、架構、深度分析 | Fable 5.2 | `gpt-6-astra` | `gpt-6-astra` |
+| `default` | 複雜的日常工程、除錯（主 session） | Opus 5.5 | `gpt-6.1-sol` | `claude-opus-5.5` |
+| `scoped` | 規格明確的實作、驗收 | Sonnet 5.5 | `gpt-6.1-terra` | `claude-sonnet-5.5` |
+| `chore` | 搜尋、讀 log、摘要 | Haiku 5.5 | `gpt-6-luna` | `claude-haiku-5.5` |
+
+| Worker | 層級 | 可改檔案 | 起始 effort |
+|---|---|---|---|
+| `dispatch-scout` | `chore` | 否 | 模型預設 |
+| `dispatch-implementer` | `scoped` | 是 | `medium` |
+| `dispatch-verifier` | `scoped` | 否 | `medium` |
+| `dispatch-expert` | `lead` | 是 | `medium` |
+
+> 📅 對應表於 2026-11-10 以 Claude Code 2.1、Codex CLI 0.166.0、Copilot CLI 1.0.106 實測。Codex 的對應依價格比例推定；各工具的注意事項見 [`dispatch/references/tiers.md`](./dispatch/references/tiers.md)。
+
+#### 📥 安裝
+
+```bash
+npx skills add RayChang/agent-skills@dispatch
+```
+
+第一次在某個工具使用時，skill 會把該工具的四份 worker 定義檔複製到使用者層級（`~/.claude/agents/`、`~/.codex/agents/`、`~/.copilot/agents/`）。
+
+#### 🎬 使用
+
+計劃核准後說「依這份計劃派工」（或 `/dispatch`）。流程：讀計劃 → 逐項分層 → 判斷要不要拆 → 派工表（等你同意）→ 派工與驗收 → 回報。計劃裡每個任務要列出會動到的檔案與驗收指令；沒列檔案的任務只會循序執行。
+
+> 🔁 模型改版時只需更新 `references/tiers.md` 與 `agents/<tool>/` 裡的 `model` 欄位。
