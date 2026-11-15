@@ -2,11 +2,11 @@
 
 # 🛠️ Agent Skills
 
-**A collection of agent skills for [Claude Code](https://claude.com/claude-code); `dispatch` also supports [Codex CLI](https://github.com/openai/codex) and [Copilot CLI](https://github.com/github/copilot-cli)**
+**A collection of agent skills for [Claude Code](https://claude.com/claude-code); `dispatch` and `scrapling-agent` also support [Codex CLI](https://github.com/openai/codex) and [Copilot CLI](https://github.com/github/copilot-cli)**
 
 [![GitHub](https://img.shields.io/badge/GitHub-RayChang%2Fagent--skills-181717?logo=github)](https://github.com/RayChang/agent-skills)
 [![Claude Code](https://img.shields.io/badge/Claude-Code-D97757?logo=anthropic&logoColor=white)](https://claude.com/claude-code)
-![Skills](https://img.shields.io/badge/skills-6-blue)
+![Skills](https://img.shields.io/badge/skills-7-blue)
 ![Docs](https://img.shields.io/badge/docs-English-green)
 
 [繁體中文](./README.md) · **English**
@@ -25,6 +25,7 @@
 | [🧱 `harness-init`](#-harness-init) | Project harness scaffolding (unified layout spec) | `/harness-init` |
 | [🔌 `mcp-agent`](#-mcp-agent) | Wrap a single MCP server as a project-scoped subagent (token/permission isolation) | `/mcp-agent` |
 | [📮 `dispatch`](#-dispatch) | Hand an approved implementation plan to model-tiered subagents (Claude Code / Codex / Copilot) | `/dispatch` |
+| [🕸️ `scrapling-agent`](#-scrapling-agent) | Read-only website extraction with evidence | Explicit setup, then use |
 
 ---
 
@@ -380,3 +381,23 @@ On first use in a tool, the skill copies that tool's four worker definitions to 
 After a plan is approved, say "dispatch this plan" (or `/dispatch`). The flow: read the plan → route each task → decide whether to split → dispatch table (waits for your approval) → dispatch and verify → report. Each task in the plan should list the files it changes and an acceptance command; a task without a file list runs sequentially only.
 
 > 🔁 When models change, update only `references/tiers.md` and the `model` lines in `agents/<tool>/`.
+
+---
+
+### 🕸️ `scrapling-agent`
+
+Extract website content with source evidence. Install the skill and explicitly run setup (requires `uv` and authenticated Claude Code):
+
+```bash
+bunx skills add RayChang/agent-skills@scrapling-agent
+python3 "<skill-dir>/scripts/install.py" --dry-run
+python3 "<skill-dir>/scripts/install.py"
+```
+
+Setup installs a user-level runtime and browsers; use `--no-browser` for HTTP-only setup. Claude Code can dispatch `scrapling-worker`; Codex or Copilot can run:
+
+```bash
+~/.local/bin/scrapling-agent --url https://example.com --task "Summarize the main content with evidence"
+```
+
+All three use Claude Code authentication and the Sonnet model. Normal extraction does not install dependencies; review returned evidence. See the [skill](./scrapling-agent/SKILL.md) for updates and safe rollback.
