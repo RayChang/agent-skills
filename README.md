@@ -2,12 +2,12 @@
 
 # 🛠️ Agent Skills
 
-**適用於 [Claude Code](https://claude.com/claude-code) 與 [Gemini CLI](https://github.com/google/gemini-cli) 的通用 agent skills 集合；`dispatch` 另支援 [Codex CLI](https://github.com/openai/codex) 與 [Copilot CLI](https://github.com/github/copilot-cli)**
+**適用於 [Claude Code](https://claude.com/claude-code) 與 [Gemini CLI](https://github.com/google/gemini-cli) 的通用 agent skills 集合；`dispatch` 與 `scrapling-agent` 另支援 [Codex CLI](https://github.com/openai/codex) 與 [Copilot CLI](https://github.com/github/copilot-cli)**
 
 [![GitHub](https://img.shields.io/badge/GitHub-RayChang%2Fagent--skills-181717?logo=github)](https://github.com/RayChang/agent-skills)
 [![Claude Code](https://img.shields.io/badge/Claude-Code-D97757?logo=anthropic&logoColor=white)](https://claude.com/claude-code)
 [![Gemini CLI](https://img.shields.io/badge/Gemini-CLI-4285F4?logo=google-gemini&logoColor=white)](https://github.com/google/gemini-cli)
-![Skills](https://img.shields.io/badge/skills-6-blue)
+![Skills](https://img.shields.io/badge/skills-7-blue)
 ![Docs](https://img.shields.io/badge/docs-繁體中文-green)
 
 **繁體中文** · [English](./README.en.md)
@@ -26,6 +26,7 @@
 | [🧱 `harness-init`](#-harness-init) | 專案 harness 骨架落地（統一目錄規範） | `/harness-init` |
 | [🔌 `mcp-agent`](#-mcp-agent) | 把單一 MCP server 封裝成專案級 subagent（token／權限隔離） | `/mcp-agent` |
 | [📮 `dispatch`](#-dispatch) | 依模型層級把已核准的實作計劃派給 subagent（Claude Code／Codex／Copilot 通用） | `/dispatch` |
+| [🕸️ `scrapling-agent`](#-scrapling-agent) | 網站唯讀擷取與來源證據 | 明確設定後使用 |
 
 ---
 
@@ -357,3 +358,23 @@ npx skills add RayChang/agent-skills@dispatch
 計劃核准後說「依這份計劃派工」（或 `/dispatch`）。流程：讀計劃 → 逐項分層 → 判斷要不要拆 → 派工表（等你同意）→ 派工與驗收 → 回報。計劃裡每個任務要列出會動到的檔案與驗收指令；沒列檔案的任務只會循序執行。
 
 > 🔁 模型改版時只需更新 `references/tiers.md` 與 `agents/<tool>/` 裡的 `model` 欄位。
+
+---
+
+### 🕸️ `scrapling-agent`
+
+擷取網站內容與來源證據。先安裝 skill，再明確執行設定（需要 `uv` 與已驗證的 Claude Code）：
+
+```bash
+bunx skills add RayChang/agent-skills@scrapling-agent
+python3 "<skill-dir>/scripts/install.py" --dry-run
+python3 "<skill-dir>/scripts/install.py"
+```
+
+設定會安裝使用者層級的執行環境與瀏覽器；僅需 HTTP 時可加 `--no-browser`。Claude Code 可委派 `scrapling-worker`；Codex 或 Copilot 可執行：
+
+```bash
+~/.local/bin/scrapling-agent --url https://example.com --task "Summarize the main content with evidence"
+```
+
+三者均使用 Claude Code 的驗證與 Sonnet 模型。一般擷取不會自動安裝；回傳證據仍需查核。更新與安全回復方式見 [技能文件](./scrapling-agent/SKILL.md)。

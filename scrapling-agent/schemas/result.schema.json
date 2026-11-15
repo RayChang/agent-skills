@@ -1,0 +1,30 @@
+{
+  "title": "Scrapling evidence report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "summary", "sources", "warnings"],
+  "properties": {
+    "status": {"type": "string", "enum": ["ok", "partial", "error"]},
+    "summary": {"type": "string", "maxLength": 6000},
+    "sources": {
+      "type": "array",
+      "maxItems": 5,
+      "description": "At least one source is required for status ok; the launcher also enforces ten evidence lines across all sources.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["url", "evidence"],
+        "properties": {
+          "url": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^https?://"},
+          "evidence": {"type": "string", "minLength": 1, "maxLength": 2000, "pattern": "\\S"}
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {"type": "string", "maxLength": 1000}
+    },
+    "error": {"type": "string", "maxLength": 1000}
+  }
+}
