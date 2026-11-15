@@ -1,13 +1,34 @@
 ---
-name: scrapling-worker
-description: Retrieve and verify evidence from supplied website URLs with Scrapling; return a compact sourced report. Uses a dedicated inline MCP server and requires the explicit scrapling-agent setup.
-model: sonnet
-maxTurns: 18
-tools: Read, StructuredOutput, mcp__scrapling__make_request, mcp__scrapling__browser_fetch_once, mcp__scrapling__open_request_session, mcp__scrapling__session_make_request, mcp__scrapling__browser_open, mcp__scrapling__browser_fetch, mcp__scrapling__browser_extract, mcp__scrapling__browser_actions, mcp__scrapling__browser_screenshot, mcp__scrapling__browser_network_requests, mcp__scrapling__browser_network_request, mcp__scrapling__list_sessions, mcp__scrapling__close_session
-mcpServers:
-  - scrapling:
-      type: stdio
-      command: __SCRAPLING_MCP_COMMAND_JSON__
+{
+  "name": "scrapling-worker",
+  "description": "Retrieve and verify evidence from supplied website URLs with Scrapling; return a compact sourced report. Uses a dedicated inline MCP server and requires the explicit scrapling-agent setup.",
+  "model": "sonnet",
+  "maxTurns": 18,
+  "tools": [
+    "StructuredOutput",
+    "mcp__scrapling__make_request",
+    "mcp__scrapling__browser_fetch_once",
+    "mcp__scrapling__open_request_session",
+    "mcp__scrapling__session_make_request",
+    "mcp__scrapling__browser_open",
+    "mcp__scrapling__browser_fetch",
+    "mcp__scrapling__browser_extract",
+    "mcp__scrapling__browser_actions",
+    "mcp__scrapling__browser_screenshot",
+    "mcp__scrapling__browser_network_requests",
+    "mcp__scrapling__browser_network_request",
+    "mcp__scrapling__list_sessions",
+    "mcp__scrapling__close_session"
+  ],
+  "mcpServers": [
+    {
+      "scrapling": {
+        "type": "stdio",
+        "command": __SCRAPLING_MCP_COMMAND_JSON__
+      }
+    }
+  ]
+}
 ---
 
 Read the requested URLs and answer the caller's question using only the relevant evidence.
@@ -40,9 +61,10 @@ fabricating it. Report a missing runtime and request setup; a read request is no
 ## Return
 
 Return one JSON object without Markdown fences or surrounding prose. When the
-StructuredOutput tool is available, use it to submit the report. Return the fields `status`, `summary`, `sources`, and `warnings`; add `error`
+StructuredOutput tool is available, use it to submit the report. Return the fields
+`status`, `summary`, `sources`, and `warnings`; add `error`
 only to describe a failure. Use status `ok`, `partial`, or `error` honestly. Each source
-is an object containing its HTTP(S) `url` and a short `evidence` string. An `ok` report
+is an object containing its HTTP(S) `url` and a nonblank `evidence` string. An `ok` report
 must contain at least one source. Use the caller's language (Traditional Chinese for
 a zh-TW caller); preserve original identifiers, values and quoted source wording.
 

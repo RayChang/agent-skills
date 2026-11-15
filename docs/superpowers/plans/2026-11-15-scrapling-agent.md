@@ -1,7 +1,7 @@
 # User-level Scrapling agent package
 
 Date: 2026-11-15
-Status: implementation, user-level setup and live validation complete; final independent verification PASS. Commit and PR creation authorized by the user.
+Status: original implementation complete. Current review corrections and acceptance evidence are in `2026-11-15-scrapling-review-fixes.md`, which supersedes the original interface details below.
 Repository baseline: `f193793e32ac8403ee15cc63f440a9337b3ee743`.
 Branch: `feature/scrapling-agent`.
 
@@ -57,7 +57,7 @@ does not break the command. Stage generated assets before replacing owned destin
 Failure must not leave an installation advertised as ready; surface which setup stage failed.
 
 The template uses an installer-resolved absolute `scrapling-mcp` path and list-shaped inline
-`mcpServers`. Use JSON string quoting when inserting paths into YAML. The template is based
+`mcpServers`. Current worker frontmatter is serialized as JSON, a YAML subset, for strict typed parsing. Use JSON string quoting when inserting paths into YAML. The template is based
 on `mcp-agent/references/agent-template.md`, adapted to the approved user-level output scope.
 Existing unowned agents are never overwritten merely because their filename matches.
 
@@ -151,10 +151,11 @@ evidence review remains necessary: JSON validation is not semantic fact verifica
 - Required installation metadata validation before launch: correct schema version and
   ready state; installed package/schema/worker/runtime paths exist; child cwd lies in the
   owned data directory. Missing setup returns an actionable JSON error, not auto-install.
-- Child tool permission list follows the simple comma-separated `tools:` scalar in the
-  trusted installed worker. Only Read, StructuredOutput and names prefixed `mcp__scrapling__` are eligible.
-  Pass explicit child-session permissions without editing global settings. Use Read and StructuredOutput
-  for built-in tools; schema output and inline MCP do not require Bash/Edit/Agent.
+- Child tool permissions follow the typed `tools` array in the installed worker's JSON-formatted
+  YAML frontmatter. Only StructuredOutput and names prefixed `mcp__scrapling__` are eligible.
+  Pass explicit child-session permissions without editing global settings. The worker has no
+  filesystem Read, Bash, Edit or Agent tool. The launcher passes its full validated definition
+  via `--agents` instead of relying on ambient same-name discovery.
 - Claude flags selected from installed CLI help: `--agent scrapling-worker --print
   --output-format json --json-schema <JSON> --no-session-persistence --setting-sources user`.
   Additional session-local tool/permission flags must preserve ordinary permission checks.
