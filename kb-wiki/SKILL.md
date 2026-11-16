@@ -256,9 +256,9 @@ State which pages you skipped and why. Discover the set from `kb/wiki/index.md` 
 | 🅿️ not-yet-built | forward-design prescription; **not** drift |
 | ❓ unverifiable | cannot confirm from the repo (say why) |
 
-**5. Scale with parallel subagents** for a large KB — partition pages into groups, one subagent per group, each returning a drift table with `file:line` evidence. If the superpowers:dispatching-parallel-agents skill is installed, use it for the fan-out; otherwise dispatch the groups yourself as parallel subagents in a single message — do not stall looking for the skill.
+**5. Scale with parallel subagents** for a large KB — partition pages into groups, one subagent per group, each returning a drift table with `file:line` evidence. Dispatch the groups as parallel subagents in a single message.
 
-**6. Fix, then INDEPENDENTLY re-verify.** After correcting drifted pages, run a second verification pass — ideally a fresh subagent told NOT to assume your fixes are right — over the edited pages. Bump each fixed page's `updated` date and leave a one-line `> **Status: Outdated** (YYYY-MM-DD) — was X; now Y (`file:line`)` block directly under the corrected claim (format in `references/schema.md`), so the old claim stays traceable instead of silently vanishing.
+**6. Fix, then re-check the edits** against the code (`file:line`) before reporting; use a fresh subagent only when the edit set is too large to re-read yourself. Bump each fixed page's `updated` date and leave a one-line `> **Status: Outdated** (YYYY-MM-DD) — was X; now Y (`file:line`)` block directly under the corrected claim (format in `references/schema.md`), so the old claim stays traceable instead of silently vanishing.
 
 **7. Append to `kb/wiki/log/<dev>.md` (the current developer's log file — see "Activity log — one file per developer"):**
 ```
@@ -392,5 +392,5 @@ For KBs created by an older version of this skill. Symptoms: no `wiki/summaries/
 - **Never assume categories** — always discover them from the actual directory structure or ask during init
 - **LLM owns content, human owns meta** — the LLM writes and maintains all wiki content pages; the human owns schema.md, category structure, and high-level decisions. Do not modify schema without human approval.
 - **Contradictions require human judgment** — when Lint finds conflicting claims across pages, flag them for human review with both sides cited. Do not silently resolve contradictions by picking one side. Mark the claim on both pages with a `> **Status: Disputed** — conflicts with [[page]]: X vs Y` block and set `contested: true` plus `contradictions: ["[[other-page]]"]` in their frontmatter, so the finding outlives the lint report.
-- **Verify ≠ Lint** — Lint is internal wiki health; Verify is alignment with the code. Forward-design pages are not drift; only the current-state claims they assert can drift. Always re-verify fixes independently.
+- **Verify ≠ Lint** — Lint is internal wiki health; Verify is alignment with the code. Forward-design pages are not drift; only the current-state claims they assert can drift.
 - **Done gate** — before reporting any operation complete: `index.md` reflects every page created, renamed, or deleted · the log entry is appended · each new claim cites a source or is labelled inference · Lint reports nothing new caused by your change
