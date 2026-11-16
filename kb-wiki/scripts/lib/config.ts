@@ -46,7 +46,7 @@ export const config = {
     model: process.env.KB_MODEL ?? "claude-sonnet-5",
     // lint --deep (contradiction / staleness reasoning over the whole wiki): Opus-class.
     // KB_LINT_MODEL wins; KB_MODEL is honoured as a global override when set.
-    lintModel: process.env.KB_LINT_MODEL ?? process.env.KB_MODEL ?? "claude-opus-5",
+    lintModel: process.env.KB_LINT_MODEL ?? process.env.KB_MODEL ?? "claude-opus-5-5",
     // Streaming request → large ceiling is safe; truncation is detected via stop_reason.
     maxTokens: positiveIntEnv("KB_MAX_TOKENS", 32000),
     effort: effortEnv("KB_EFFORT", "high"),
