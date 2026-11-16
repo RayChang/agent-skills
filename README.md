@@ -378,3 +378,5 @@ python3 "<skill-dir>/scripts/install.py"
 ```
 
 三者均使用 Claude Code 的驗證與 Sonnet 模型。一般擷取不會自動安裝；回傳證據仍需查核。更新與安全回復方式見 [技能文件](./scrapling-agent/SKILL.md)。
+
+研究依據、已完成的驗證與尚未量測的限制，見 [Scrapling 研究報告](./docs/research/scrapling-agents.md)。

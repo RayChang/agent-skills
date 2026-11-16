@@ -401,3 +401,5 @@ Setup installs a user-level runtime and browsers; use `--no-browser` for HTTP-on
 ```
 
 All three use Claude Code authentication and the Sonnet model. Normal extraction does not install dependencies; review returned evidence. See the [skill](./scrapling-agent/SKILL.md) for updates and safe rollback.
+
+See the [Scrapling research report](./docs/research/scrapling-agents.md) for the evidence, completed validation and remaining measurement limits.
