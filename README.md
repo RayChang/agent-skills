@@ -130,7 +130,7 @@ bun "<skill-dir>/scripts/map.ts" --regen-summaries  # 重新從頁面內文萃�
 |---|---|---|
 | `KB_DEV` | 活動日誌的開發者代號（寫入 `kb/wiki/log/<dev>.md`） | `git config user.name` 的 slug |
 | `KB_MODEL` | `--deep` 使用的模型（`map` 的預設；設了也會成為 `lint` 的預設） | `claude-sonnet-5` |
-| `KB_LINT_MODEL` | `lint --deep` 使用的模型（矛盾／過期推理，較吃判斷力） | `claude-opus-5` |
+| `KB_LINT_MODEL` | `lint --deep` 使用的模型（矛盾／過期推理，較吃判斷力） | `claude-opus-5-5` |
 | `KB_MAX_TOKENS` | `--deep` 回應上限（正整數，非法值退回預設；串流請求，觸頂會直接報錯而非靜默截斷） | `32000` |
 | `KB_EFFORT` | `--deep` 的推理深度（`low`/`medium`/`high`/`xhigh`/`max`） | `high` |
 

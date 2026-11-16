@@ -129,7 +129,7 @@ Environment variables (all optional):
 |---|---|---|
 | `KB_DEV` | Developer handle for the activity log (written to `kb/wiki/log/<dev>.md`) | slug of `git config user.name` |
 | `KB_MODEL` | Model used by `--deep` (default for `map`; also becomes `lint`'s default when set) | `claude-sonnet-5` |
-| `KB_LINT_MODEL` | Model used by `lint --deep` (contradiction / staleness reasoning) | `claude-opus-5` |
+| `KB_LINT_MODEL` | Model used by `lint --deep` (contradiction / staleness reasoning) | `claude-opus-5-5` |
 | `KB_MAX_TOKENS` | `--deep` response cap (positive integer; invalid values fall back; streamed — hitting the cap is a hard error, never a silent truncation) | `32000` |
 | `KB_EFFORT` | Reasoning depth for `--deep` (`low`/`medium`/`high`/`xhigh`/`max`) | `high` |
 
